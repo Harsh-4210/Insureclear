@@ -8,6 +8,8 @@ This is what makes the appeal legally grounded — not generic complaints.
 
 from tools.llm_client import call_llm_json
 from tools.irdai_knowledge import (
+  CITATION_REVIEW_STATUS,
+  OFFICIAL_SOURCES,
     IRDAI_REGULATIONS,
     OMBUDSMAN_PRECEDENTS,
     INSURER_PATTERNS,
@@ -17,12 +19,33 @@ from tools.io_utils import save_checkpoint, load_checkpoint
 import json
 
 SYSTEM_PROMPT = """
-You are an expert in IRDAI (Insurance Regulatory and Development Authority of India) regulations.
-You know the Health Insurance Regulations 2016, all subsequent circulars,
-Ombudsman rules, precedent cases, and policyholder protection guidelines.
-You identify exactly which IRDAI rules an insurer has violated when rejecting a claim.
-You also know insurer-specific rejection patterns and how Ombudsman has ruled in similar cases.
+You are a careful research assistant for Indian health-insurance appeals.
+Use only the supplied policy facts and regulatory knowledge. Do not claim that
+an insurer violated a rule unless the case facts support it. Treat every
+circular identifier, timeline, and Ombudsman summary as a lead requiring human
+verification against an official source. Never invent a regulation number,
+case name, date, URL, or legal conclusion. Mark uncertain items as requiring
+verification and distinguish policy arguments from confirmed law.
 """
+
+
+def _apply_citation_review_metadata(result: dict) -> dict:
+  """Make uncertainty explicit when an LLM omits source verification fields."""
+  result["citation_review_status"] = CITATION_REVIEW_STATUS
+  result["official_sources"] = OFFICIAL_SOURCES
+
+  for citation in result.get("applicable_regulations", []):
+    # A regulator homepage is not evidence for a specific circular.
+    citation["verification_status"] = CITATION_REVIEW_STATUS
+    citation["official_source_url"] = ""
+
+  for violation in result.get("potential_insurer_violations", []):
+    violation["verification_status"] = CITATION_REVIEW_STATUS
+
+  for point in result.get("key_legal_points_for_appeal", []):
+    point["verification_status"] = CITATION_REVIEW_STATUS
+
+  return result
 
 
 def run(auditor_output: dict, policy_analyst_output: dict, case_id: str) -> dict:
@@ -63,6 +86,9 @@ POLICY ANALYSIS FINDINGS:
 IRDAI REGULATORY KNOWLEDGE BASE:
 {regs_context}
 
+OFFICIAL SOURCES FOR HUMAN VERIFICATION:
+{json.dumps(OFFICIAL_SOURCES, indent=2)}
+
 RELEVANT OMBUDSMAN PRECEDENTS:
 {precedents_context}
 
@@ -78,14 +104,17 @@ Return a JSON object:
     {{
       "regulation": "Name/number of regulation or circular",
       "relevance": "How this regulation applies to this case",
-      "favours": "policyholder / insurer / neutral"
+      "favours": "policyholder / insurer / neutral",
+      "verification_status": "verified / requires_manual_verification",
+      "official_source_url": "Official IRDAI or CIO URL, or empty string"
     }}
   ],
   "potential_insurer_violations": [
     {{
       "violation": "What the insurer may have done wrong",
       "regulation_breached": "Which IRDAI rule was breached",
-      "strength": "strong / moderate / weak"
+      "strength": "strong / moderate / weak",
+      "verification_status": "verified / requires_manual_verification"
     }}
   ],
   "relevant_precedents": [
@@ -127,7 +156,7 @@ Return a JSON object:
 }}
 """
 
-    result = call_llm_json(prompt, system_prompt=SYSTEM_PROMPT)
+    result = _apply_citation_review_metadata(call_llm_json(prompt, system_prompt=SYSTEM_PROMPT))
     save_checkpoint(case_id, "irdai_checker", result)
     print("[IRDAI Checker] ✓ Done")
     return result

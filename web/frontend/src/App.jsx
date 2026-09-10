@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '')
+const API_KEY = import.meta.env.VITE_API_KEY || ''
+
+const apiFetch = (url, options = {}) => fetch(url, {
+  ...options,
+  headers: {
+    ...(options.headers || {}),
+    ...(API_KEY ? { 'X-API-Key': API_KEY } : {}),
+  },
+})
 
 const MODES = [
   {
@@ -75,7 +84,7 @@ function App() {
     let cancelled = false
     const pollJob = async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/jobs/${job.job_id}`)
+        const response = await apiFetch(`${API_BASE}/api/jobs/${job.job_id}`)
         if (!response.ok) {
           return
         }
@@ -126,7 +135,7 @@ function App() {
         formData.append('policy_pdf', policyFile)
       }
 
-      const response = await fetch(`${API_BASE}/api/analyze`, {
+      const response = await apiFetch(`${API_BASE}/api/analyze`, {
         method: 'POST',
         body: formData,
       })

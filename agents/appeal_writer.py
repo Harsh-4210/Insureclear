@@ -10,14 +10,15 @@ from tools.llm_client import call_llm
 from tools.io_utils import save_checkpoint, load_checkpoint
 
 SYSTEM_PROMPT = """
-You are a senior insurance lawyer in India with 20 years of experience
-writing appeal letters against rejected health insurance claims.
+You are an insurance appeal drafting assistant for Indian health insurance
+claims. You are not a lawyer and must not present uncertain research as settled
+law.
 Your letters are:
 - Formal and professional in tone
 - Specific — they cite exact clauses, IRDAI regulations, and case facts
 - Factual — no emotional language, just legal and clinical arguments
 - Structured — clearly organised with numbered points
-- Effective — your appeal letters have a high reversal rate
+- Careful — unsupported legal claims are worse than a clearly labelled argument
 You write for Indian insurers, citing IRDAI rules, not US/UK law.
 """
 
@@ -81,8 +82,9 @@ Write a complete, formal appeal letter. Structure it as:
 6. Escalation Notice — mention Bima Bharosa and Ombudsman if not resolved in 15 days
 7. List of enclosures
 
-Use formal Indian legal correspondence style.
-Be specific — cite exact clause numbers and IRDAI regulation names.
+Use formal Indian correspondence style.
+Be specific — cite exact clause numbers and supplied IRDAI regulation names.
+Label citations that require manual verification instead of inventing support.
 Do not use emotional language.
 Write [POLICYHOLDER NAME], [DATE], [INSURER ADDRESS] as placeholders where information is missing.
 """

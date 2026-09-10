@@ -1,33 +1,233 @@
+<div align="center">
+
 # InsureClear
 
-AI-assisted appeal generation for rejected Indian health insurance claims.
+### Turn a rejected health claim into a reviewable appeal package.
 
-InsureClear accepts a claim denial and the relevant policy document, then
-produces an appeal letter grounded in the policy text, IRDAI regulations, and
-Indian Insurance Ombudsman references. It is designed for Indian policyholders
-and does not use US or UK legal rules.
+<p>
+  <img src="https://img.shields.io/badge/status-completed%20implementation-0f766e?style=for-the-badge" alt="Completed implementation" />
+  <img src="https://img.shields.io/badge/domain-Indian%20health%20insurance-0e75b6?style=for-the-badge" alt="Indian health insurance" />
+  <img src="https://img.shields.io/badge/pipeline-5%20AI%20agents-155e9e?style=for-the-badge" alt="Five AI agents" />
+  <img src="https://img.shields.io/badge/quality%20gate-judge%20%2B%20revision-115e59?style=for-the-badge" alt="Judge and revision" />
+</p>
 
-## What It Does
+<p>
+  <a href="#experience-the-system">Experience the system</a> &nbsp; | &nbsp;
+  <a href="#architecture">Architecture</a> &nbsp; | &nbsp;
+  <a href="#run-it">Run it</a> &nbsp; | &nbsp;
+  <a href="#api-surface">API</a> &nbsp; | &nbsp;
+  <a href="docs/DEPLOYMENT.md">Deploy</a>
+</p>
 
-The pipeline uses five agents:
+</div>
 
-1. **Auditor** extracts claim facts, the denial reason, and relevant clauses.
-2. **Policy Analyst** identifies exclusions, sub-limits, waiting periods, and counter-arguments.
-3. **IRDAI Checker** matches the denial against regulatory and Ombudsman references.
-4. **Appeal Writer** drafts a formal appeal letter with citations.
-5. **Judge** reviews the draft, scores its quality, and requests a revision when the score is below `0.75`.
+---
 
-The pipeline stores checkpoints so a named case can resume after an interrupted
-run.
+## The Product
 
-## Requirements
+InsureClear is a multi-agent AI system for rejected Indian health-insurance
+claims. It reads a denial letter and the relevant policy, separates facts from
+interpretation, finds possible policy and regulatory arguments, drafts an
+appeal, and sends the result through a quality gate before creating the final
+package.
 
-- Python 3.10 or later
-- A Google Gemini API key
-- Node.js and npm only if you want to run the React frontend
-- Tesseract and Poppler may be required for scanned or image-based PDFs
+It is built for **reviewable assistance**, not automatic legal advice:
+uncertain citations are labelled for manual verification, source documents are
+not retained after API processing, and a person must review the letter before
+sending it.
 
-## Installation
+<div align="center">
+
+![InsureClear architecture](docs/architecture.svg)
+
+</div>
+
+## Why It Is Interesting
+
+| Problem | InsureClear response |
+|---|---|
+| A denial mixes facts, clauses, and conclusions | The Auditor creates a structured case snapshot. |
+| Policy language is difficult to challenge | The Policy Analyst looks for exclusions, limits, waiting periods, and counter-arguments. |
+| Regulatory claims can be overconfident | The IRDAI Checker attaches source-review metadata and official portals. |
+| A first draft may contain weak or unsupported arguments | The Judge scores it and can trigger up to two revisions. |
+| Long-running jobs can disappear on restart | A SQLite-backed queue and checkpoints recover named cases. |
+| Sensitive PDFs should not linger | Uploaded source files are removed after processing. |
+
+---
+
+## Experience The System
+
+### Fastest path: run the built-in demo
+
+```bash
+python orchestrator/cli.py --demo
+```
+
+The demo uses the included sample denial and policy files. It produces:
+
+```text
+data/output/<case_id>_<timestamp>/
+|-- appeal_letter.txt
+`-- full_report.json
+```
+
+### Browser experience
+
+```bash
+# Terminal 1: API
+uvicorn web.api:app --reload --port 8000
+
+# Terminal 2: React interface
+cd web/frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173`.
+
+The interface provides:
+
+- Demo, plain-text, and PDF input modes
+- Live job progress across every agent stage
+- Case snapshot and policy analysis views
+- IRDAI findings and citation-review status
+- Judge scorecard and revision state
+- Appeal letter and JSON report downloads
+
+### Streamlit experience
+
+```bash
+streamlit run app.py
+```
+
+---
+
+## Architecture
+
+### End-to-end reasoning flow
+
+```mermaid
+flowchart LR
+    A[Denial PDF or text] --> X[PDF extraction + validation]
+    B[Policy PDF or text] --> X
+    X --> C[Auditor]
+    C --> D[Policy Analyst]
+    D --> E[IRDAI Checker]
+    E --> F[Appeal Writer]
+    F --> G[Judge]
+    G -->|score >= 0.75| H[Appeal package]
+    G -->|score < 0.75| I[Revision request]
+    I --> F
+    H --> J[TXT letter + JSON report]
+```
+
+### Control plane and job lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> queued: POST /api/analyze
+    queued --> running: durable worker claims job
+    running --> completed: artifacts written
+    running --> failed: captured error
+    completed --> [*]
+    failed --> [*]
+
+    note right of running
+      Uploaded PDFs are temporary.
+      SQLite records survive restart.
+    end note
+```
+
+### Agent responsibilities
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant Q as SQLite queue
+    participant A as Auditor
+    participant P as Policy Analyst
+    participant I as IRDAI Checker
+    participant W as Appeal Writer
+    participant J as Judge
+
+    U->>Q: Submit denial + policy
+    Q->>A: Claim facts and denial reason
+    A->>P: Structured case snapshot
+    P->>I: Policy findings and counter-arguments
+    I->>W: Regulatory leads + appeal pathway
+    W->>J: Draft appeal
+    alt score below 0.75
+        J->>W: Top changes, missing elements, flags
+        W->>J: Revised appeal
+    else approved
+        J-->>Q: Final score and recommendation
+    end
+    Q-->>U: Letter and full report
+```
+
+<details>
+<summary><b>Open the implementation map</b></summary>
+<br />
+
+| Layer | Implementation | Responsibility |
+|---|---|---|
+| Intake | `orchestrator/cli.py`, `web/api.py`, `app.py` | CLI, FastAPI, and Streamlit entry points |
+| Extraction | `tools/pdf_reader.py` | Digital PDF extraction with Tesseract OCR fallback |
+| Reasoning | `agents/` | Auditor, policy, IRDAI, writer, and judge agents |
+| Orchestration | `orchestrator/main.py` | Sequencing, score threshold, revisions, progress events |
+| State | `sessions/`, `tools/job_store.py` | Checkpoints and durable SQLite jobs |
+| Artifacts | `tools/io_utils.py` | Appeal letter and full JSON report |
+| Browser UI | `web/frontend/src/` | React workflow, progress rail, analysis tabs, downloads |
+| Deployment | `Dockerfile`, `docker-compose.yml` | API, OCR dependencies, and Nginx frontend |
+
+</details>
+
+---
+
+## Quality And Safety Controls
+
+### Judge-gated output
+
+The pipeline does not blindly accept the first draft:
+
+- Approval threshold: `0.75`
+- Maximum automatic revisions: `2`
+- Judge checks factual accuracy, citation quality, argument strength, structure,
+  missing elements, weak arguments, and hallucination flags
+
+### Citation review
+
+The application includes official starting points for verification:
+
+- [IRDAI](https://irdai.gov.in/)
+- [Bima Bharosa](https://bimabharosa.irdai.gov.in/)
+- [Council for Insurance Ombudsmen](https://cioins.co.in/)
+
+Generated regulatory entries are marked `manual_verification_required` unless
+an exact official document has been checked. See
+[docs/REGULATORY_SOURCES.md](docs/REGULATORY_SOURCES.md).
+
+### Privacy boundary
+
+- API access can require `X-API-Key` authentication.
+- Upload and text size limits are configurable.
+- PDF signatures and content types are validated.
+- Uploaded PDFs are deleted after processing.
+- Job state is stored separately from source documents.
+- Do not commit `.env`, claim documents, or generated personal data.
+
+---
+
+## Run It
+
+### Requirements
+
+- Python 3.10+
+- Gemini API key
+- Node.js and npm for the React UI
+- Tesseract and Poppler for scanned PDFs outside Docker
+
+### Install
 
 ```bash
 git clone https://github.com/Harsh-4210/insureclear.git
@@ -40,123 +240,134 @@ venv\Scripts\activate        # Windows
 pip install -r requirements.txt
 ```
 
-Create a `.env` file in the project root:
-
-```env
-GEMINI_API_KEY=your_gemini_api_key_here
-```
-
-Create an API key at [Google AI Studio](https://aistudio.google.com/).
-
-## Run From The CLI
-
-### Demo
-
-Run the built-in sample case without providing input files:
+Create `.env` from the template:
 
 ```bash
+copy .env.example .env     # Windows
+# cp .env.example .env     # macOS/Linux
+```
+
+Set `GEMINI_API_KEY` in `.env`. The current default model is
+`gemini-3.6-flash`; override it with `GEMINI_MODEL` when needed.
+
+### Input modes
+
+```bash
+# Built-in sample
 python orchestrator/cli.py --demo
-```
 
-### PDF input
+# PDF documents
+python orchestrator/cli.py --denial data/input/denial.pdf --policy data/input/policy.pdf
 
-Pass the denial letter and policy document as PDFs:
+# Plain text documents
+python orchestrator/cli.py --text-denial denial.txt --text-policy policy.txt
 
-```bash
-python orchestrator/cli.py \
-  --denial data/input/denial.pdf \
-  --policy data/input/policy.pdf
-```
-
-### Plain-text input
-
-Use text files when PDF extraction is unnecessary:
-
-```bash
-python orchestrator/cli.py \
-  --text-denial denial.txt \
-  --text-policy policy.txt
-```
-
-### Cases and checkpoints
-
-Use a stable case ID to resume from saved checkpoints. Add `--fresh` to clear
-that case's checkpoints before running again:
-
-```bash
+# Resume a named case or force a clean rerun
 python orchestrator/cli.py --demo --case case_001
 python orchestrator/cli.py --demo --case case_001 --fresh
 ```
 
-Run `python orchestrator/cli.py --help` for all available options.
-
-## Run The Web Interfaces
-
-### React and FastAPI
-
-Start the API from the project root:
+### Docker
 
 ```bash
-uvicorn web.api:app --reload --port 8000
+copy .env.example .env     # Windows
+# cp .env.example .env     # macOS/Linux
+docker compose up --build
 ```
 
-In a second terminal, install and start the frontend:
+- Frontend: `http://localhost:8080`
+- API: `http://localhost:8000`
+- Health: `http://localhost:8000/health`
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and
+[docs/OCR_SETUP.md](docs/OCR_SETUP.md) for production and OCR configuration.
+
+---
+
+## API Surface
+
+All protected endpoints accept `X-API-Key` when authentication is enabled.
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/health` | Service health check |
+| `POST` | `/api/analyze` | Queue a demo, text, or PDF analysis |
+| `GET` | `/api/jobs/{job_id}` | Read job status and progress |
+| `GET` | `/api/jobs/{job_id}/letter` | Return appeal text |
+| `GET` | `/api/jobs/{job_id}/report` | Return the full report as JSON |
+| `GET` | `/api/jobs/{job_id}/download/letter` | Download `appeal_letter.txt` |
+| `GET` | `/api/jobs/{job_id}/download/report` | Download `full_report.json` |
+
+<details>
+<summary><b>Example API submission</b></summary>
+<br />
 
 ```bash
+curl -X POST http://localhost:8000/api/analyze \
+  -F "mode=demo" \
+  -F "case_id=demo_case"
+```
+
+With authentication:
+
+```bash
+curl -H "X-API-Key: $INSURECLEAR_API_KEY" \
+  http://localhost:8000/api/jobs/<job_id>
+```
+
+</details>
+
+---
+
+## Test And Ship
+
+```bash
+# Backend tests
+.venv\Scripts\python.exe -m pytest tests -q
+
+# Frontend production build
 cd web/frontend
-npm install
-npm run dev
+npm run build
 ```
 
-The frontend runs at `http://localhost:5173` and calls the API at
-`http://localhost:8000`.
+The test suite covers pipeline execution, judge thresholds, revision behavior,
+PDF extraction, OCR fallback, API lifecycle, upload validation, and artifact
+creation.
 
-Useful API endpoints include:
-
-- `GET /health` - health check
-- `POST /api/analyze` - submit a demo, text, or PDF analysis
-- `GET /api/jobs/{job_id}` - inspect job progress
-- `GET /api/jobs/{job_id}/appeal` - download the generated appeal
-- `GET /api/jobs/{job_id}/report` - download the full JSON report
-
-### Streamlit
-
-The original Streamlit interface remains available:
-
-```bash
-streamlit run app.py
-```
-
-## Output Files
-
-Completed runs are saved to a timestamped directory:
-
-```text
-data/output/<case_id>_<YYYYMMDD_HHMMSS>/
-|-- appeal_letter.txt
-`-- full_report.json
-```
-
-- `appeal_letter.txt` contains the generated appeal.
-- `full_report.json` contains the agent outputs, review data, and artifact paths.
-- `sessions/<case_id>/` contains intermediate checkpoints used for resuming.
+---
 
 ## Project Structure
 
 ```text
-agents/                 Specialized analysis and writing agents
-data/samples/           Built-in demo denial and policy files
-orchestrator/           Pipeline and CLI entry points
-tools/                  PDF extraction, persistence, logging, and LLM helpers
-web/api.py              FastAPI backend
-web/frontend/           React and Vite frontend
-app.py                  Streamlit interface
+insureclear/
+|-- agents/                 Five specialized reasoning agents
+|-- orchestrator/           Pipeline orchestration and CLI
+|-- tools/                  OCR, LLM, persistence, source metadata, queue
+|-- web/api.py              FastAPI service and durable worker
+|-- web/frontend/           React + Vite interface and Nginx image
+|-- data/samples/           Built-in demo documents
+|-- docs/                   Deployment, OCR, regulatory, architecture visual
+|-- tests/                  Automated backend and pipeline tests
+|-- Dockerfile              API image with Poppler and Tesseract
+|-- docker-compose.yml      API + frontend deployment
+`-- app.py                  Streamlit interface
 ```
 
-## Important Notes
+---
 
-- Generated content is an aid for preparing an appeal, not legal advice or a
-  guarantee that a claim will be approved.
-- Review every citation, policy interpretation, personal detail, and deadline
-  before submitting an appeal.
-- Do not commit `.env` files or confidential claim documents to the repository.
+## Responsible Use
+
+InsureClear helps organize evidence and prepare a draft. It does not guarantee
+claim approval, replace a lawyer, or establish that an insurer violated a law.
+Review every personal detail, policy clause, deadline, citation, and generated
+argument before submission.
+
+<div align="center">
+
+### Built for clearer decisions, not louder claims.
+
+<a href="https://github.com/Harsh-4210/insureclear">Source</a> &nbsp; | &nbsp;
+<a href="docs/REGULATORY_SOURCES.md">Sources</a> &nbsp; | &nbsp;
+<a href="docs/DEPLOYMENT.md">Deployment</a>
+
+</div>

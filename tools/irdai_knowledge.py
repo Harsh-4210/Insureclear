@@ -5,7 +5,18 @@ appeal rights, Ombudsman escalation rules, insurer-specific patterns,
 and Ombudsman precedents.
 All sourced from IRDAI (Health Insurance) Regulations 2016 and amendments.
 Updated with 2024-2025 circulars.
+
+The entries below are research leads, not a substitute for checking the current
+official instrument before a letter is sent. See docs/REGULATORY_SOURCES.md.
 """
+
+OFFICIAL_SOURCES = {
+    "irdai": "https://irdai.gov.in/",
+    "bima_bharosa": "https://bimabharosa.irdai.gov.in/",
+    "insurance_ombudsman": "https://cioins.co.in/",
+}
+
+CITATION_REVIEW_STATUS = "manual_verification_required"
 
 IRDAI_REGULATIONS = {
     "claim_settlement_timeline": {

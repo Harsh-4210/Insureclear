@@ -8,6 +8,8 @@ sessions/
 data/input/*.pdf
 data/input/*.txt
 data/output/
+data/jobs.sqlite3
+data/job_inputs/
 logs/*.log
 .DS_Store
 outputs/

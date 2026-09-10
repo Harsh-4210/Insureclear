@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from tools.pdf_reader import extract_text_from_pdf
-from tools.io_utils import save_final_output
+from tools.io_utils import create_output_dir, save_final_output
 from tools.llm_client import get_stats
 from agents import auditor, policy_analyst, irdai_checker, appeal_writer, judge
 
@@ -217,6 +217,7 @@ def run_pipeline(
     # ── Assemble full report ──────────────────────────────────────
     pipeline_time = time.time() - pipeline_start
     llm_stats = get_stats()
+    output_dir = create_output_dir(case_id)
 
     full_report = {
         "case_id": case_id,

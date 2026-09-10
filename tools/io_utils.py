@@ -46,9 +46,7 @@ def load_checkpoint(case_id: str, stage: str) -> dict | None:
 
 def save_final_output(case_id: str, appeal_letter: str, full_report: dict) -> Path:
     """Save the final appeal letter and full JSON report to output directory."""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = OUTPUT_DIR / f"{case_id}_{timestamp}"
-    out_dir.mkdir(exist_ok=True, parents=True)
+    out_dir = create_output_dir(case_id)
 
     # Plain text appeal letter
     letter_path = out_dir / "appeal_letter.txt"
@@ -62,6 +60,14 @@ def save_final_output(case_id: str, appeal_letter: str, full_report: dict) -> Pa
 
     print(f"\n[output] Appeal letter saved: {letter_path}")
     print(f"[output] Full report saved: {report_path}")
+    return out_dir
+
+
+def create_output_dir(case_id: str) -> Path:
+    """Create and return a timestamped output directory for a case."""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_dir = OUTPUT_DIR / f"{case_id}_{timestamp}"
+    out_dir.mkdir(exist_ok=True, parents=True)
     return out_dir
 
 

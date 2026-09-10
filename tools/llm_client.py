@@ -16,6 +16,7 @@ load_dotenv()
 _client_initialised = False
 _total_calls = 0
 _total_time = 0.0
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 
 
 def _init():
@@ -57,7 +58,7 @@ def call_llm(
     full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
 
     model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
+        model_name=MODEL_NAME,
         generation_config=genai.GenerationConfig(
             temperature=temperature,
             max_output_tokens=max_output_tokens,
@@ -120,7 +121,7 @@ def _call_native_json(prompt: str, system_prompt: str, max_retries: int) -> dict
     full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
 
     model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
+        model_name=MODEL_NAME,
         generation_config=genai.GenerationConfig(
             temperature=0.1,
             max_output_tokens=4096,
