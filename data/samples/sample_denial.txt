@@ -1,0 +1,42 @@
+CLAIM REJECTION LETTER
+
+Date: 15th March 2025
+
+Ref: Claim No. CLM/2025/HLT/784512
+Policy No: 23145678901234
+TPA: Medi Assist Healthcare Services Ltd.
+
+To,
+Mr. Rajesh Kumar Sharma
+Flat 302, Sunrise Apartments
+Kothrud, Pune - 411038
+Maharashtra
+
+Subject: Rejection of Health Insurance Claim under Policy No. 23145678901234
+
+Dear Mr. Sharma,
+
+With reference to your claim for hospitalisation at Jupiter Hospital, Pune from 28th February 2025 to 5th March 2025 for Coronary Angioplasty with Stent Placement, we regret to inform you that your claim for ₹4,85,000 (Rupees Four Lakhs Eighty-Five Thousand Only) has been rejected.
+
+Reason for Rejection:
+
+After careful review of your medical records and policy terms, we have determined that the condition (Coronary Artery Disease) is a Pre-Existing Disease as per Clause 4.1 of your policy. Our medical team has noted that you had been diagnosed with Hypertension in 2019, which is a precursor to coronary artery disease. As your policy was purchased on 1st January 2023, the 4-year waiting period for pre-existing conditions under Clause 4.1(b) has not been completed.
+
+Additionally, the room rent charged (₹6,500/day) exceeds the policy sub-limit of ₹4,000/day as specified in Schedule III of your policy document. Even if the pre-existing condition clause were not applicable, proportionate deduction would apply to the entire claim amount.
+
+Policy Clause Reference:
+- Clause 4.1(b): Pre-Existing Disease Waiting Period — 4 years
+- Schedule III: Room Rent Sub-Limit — ₹4,000 per day or 1% of Sum Insured, whichever is lower
+- Sum Insured: ₹5,00,000
+
+If you are dissatisfied with this decision, you may contact our Grievance Redressal Officer within 30 days of receiving this communication.
+
+Yours sincerely,
+
+Dr. Meena Patel
+Senior Claims Manager
+Star Health and Allied Insurance Company Ltd.
+Claims Processing Centre
+Chennai - 600001
+
+Encl: Claim Processing Summary

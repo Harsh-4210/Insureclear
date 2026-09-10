@@ -1,0 +1,15 @@
+.env
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.zip
+sessions/
+data/input/*.pdf
+data/input/*.txt
+data/output/
+logs/*.log
+.DS_Store
+outputs/
+web/frontend/node_modules/
+web/frontend/dist/
