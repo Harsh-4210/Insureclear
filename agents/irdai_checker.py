@@ -16,6 +16,7 @@ from tools.irdai_knowledge import (
     find_applicable_regulations,
 )
 from tools.io_utils import save_checkpoint, load_checkpoint
+from tools.agent_validation import validate_agent_output
 import json
 
 SYSTEM_PROMPT = """
@@ -156,7 +157,11 @@ Return a JSON object:
 }}
 """
 
-    result = _apply_citation_review_metadata(call_llm_json(prompt, system_prompt=SYSTEM_PROMPT))
+    result = validate_agent_output(
+        "IRDAI Checker",
+        call_llm_json(prompt, system_prompt=SYSTEM_PROMPT),
+    )
+    result = _apply_citation_review_metadata(result)
     save_checkpoint(case_id, "irdai_checker", result)
     print("[IRDAI Checker] ✓ Done")
     return result

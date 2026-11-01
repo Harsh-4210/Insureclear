@@ -17,6 +17,7 @@ import argparse
 import json
 import sys
 import time
+import traceback
 from datetime import datetime
 from pathlib import Path
 
@@ -67,8 +68,10 @@ def _tick(value) -> str:
     return "yes" if value else "no"
 
 
-def write_summary(run_dir: Path, results: list[dict]) -> dict:
+def write_summary(run_dir: Path, results: list[dict], failures: list[dict]) -> dict:
     summary = summarise(results)
+    summary["failed_cases"] = len(failures)
+    summary["failures"] = failures
     summary["model"] = f"{llm_client.PROVIDER}:{llm_client.MODEL_NAME}"
     summary["reasoning_effort"] = llm_client.GROQ_REASONING_EFFORT if llm_client.PROVIDER == "groq" else None
     summary["total_tokens"] = llm_client.get_stats()["total_tokens"]
@@ -99,7 +102,11 @@ def write_summary(run_dir: Path, results: list[dict]) -> dict:
             f"- Letters with an unsupported reference number: {summary['letters_with_unsupported_ids']}/{summary['cases']}",
             f"- Mean judge score: {summary['mean_judge_score']}, mean revisions: {summary['mean_revisions']}, "
             f"mean time per case: {summary['mean_seconds']}s",
+            f"- Failed cases: {summary['failed_cases']}",
         ]
+    if failures:
+        lines += ["", "## Failures", "", "| Case | Error |", "|---|---|"]
+        lines.extend(f"| {failure['id']} | {failure['error']} |" for failure in failures)
     (run_dir / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return summary
 
@@ -120,6 +127,7 @@ def main() -> None:
         cases = [c for c in CASES if any(c["id"].startswith(p) for p in args.only)]
 
     results = []
+    failures = []
     for case in cases:
         case_file = run_dir / f"{case['id']}.json"
         if case_file.exists():
@@ -139,7 +147,16 @@ def main() -> None:
             )
         except Exception as e:
             print(f"[eval] {case['id']}: pipeline failed: {e}")
-            (run_dir / f"{case['id']}.error.txt").write_text(str(e), encoding="utf-8")
+            failure = {
+                "id": case["id"],
+                "error": str(e),
+                "exception_type": type(e).__name__,
+                "traceback": traceback.format_exc(),
+            }
+            failures.append(failure)
+            (run_dir / f"{case['id']}.error.txt").write_text(
+                json.dumps(failure, indent=2), encoding="utf-8"
+            )
             continue
         finally:
             clear_session(case_id)
@@ -153,9 +170,11 @@ def main() -> None:
         print(f"[eval] {case['id']}: scored")
         time.sleep(2)
 
-    summary = write_summary(run_dir, results)
+    summary = write_summary(run_dir, results, failures)
     print(json.dumps(summary, indent=2))
     print(f"\nResults: {run_dir}")
+    if failures:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from tools.pdf_reader import extract_text_from_pdf
 from tools.io_utils import create_output_dir, save_final_output
 from tools.llm_client import get_stats
+from tools.agent_validation import validate_agent_output
 from agents import auditor, policy_analyst, irdai_checker, appeal_writer, judge
 
 
@@ -113,6 +114,7 @@ def run_pipeline(
     emit("auditor", "Auditor is parsing denial and policy documents", 15, "running")
     with _timed("Auditor") as t1:
         auditor_result = auditor.run(denial_text, policy_text, case_id)
+        auditor_result = validate_agent_output("Auditor", auditor_result)
 
     print(f"\n  Extracted:")
     print(f"  • Insurer     : {auditor_result.get('insurer_name')}")
@@ -125,6 +127,7 @@ def run_pipeline(
     emit("policy_analyst", "Policy Analyst is checking clauses and exclusions", 30, "running")
     with _timed("Policy Analyst") as t2:
         policy_result = policy_analyst.run(policy_text, auditor_result, case_id)
+        policy_result = validate_agent_output("Policy Analyst", policy_result)
 
     valid = policy_result.get("rejection_appears_valid")
     print(f"\n  Rejection legitimacy: {'⚠️  Appears valid' if valid else '✓ Challengeable'}")
@@ -134,6 +137,7 @@ def run_pipeline(
     emit("irdai_checker", "IRDAI Checker is matching the case against regulations", 50, "running")
     with _timed("IRDAI Checker") as t3:
         irdai_result = irdai_checker.run(auditor_result, policy_result, case_id)
+        irdai_result = validate_agent_output("IRDAI Checker", irdai_result)
 
     pathway = irdai_result.get("appeal_pathway", {})
     print(f"\n  Recommended appeal: {pathway.get('recommended_first_step')}")
@@ -148,6 +152,7 @@ def run_pipeline(
     emit("appeal_writer", "Appeal Writer is drafting the appeal letter", 70, "running")
     with _timed("Appeal Writer") as t4:
         letter = appeal_writer.run(auditor_result, policy_result, irdai_result, case_id)
+        letter = validate_agent_output("Appeal Writer", letter)
     print(f"  Letter length: {len(letter.split())} words")
 
     # ── Agent 5: Judge ────────────────────────────────────────────
@@ -155,6 +160,7 @@ def run_pipeline(
     emit("judge", "Judge is reviewing the draft for quality and hallucinations", 85, "running")
     with _timed("Judge") as t5:
         judge_result = judge.run(letter, auditor_result, irdai_result, case_id)
+        judge_result = validate_agent_output("Judge", judge_result)
 
     score = judge_result.get("overall_score", 0)
     recommendation = judge_result.get("recommendation", "APPROVE")
@@ -189,6 +195,7 @@ def run_pipeline(
                 case_id=case_id,
                 revision_number=revision_count,
             )
+            letter = validate_agent_output("Appeal Writer revision", letter)
 
         # Clear judge checkpoint so it re-evaluates the revised letter
         from tools.io_utils import get_checkpoint_path
@@ -200,6 +207,7 @@ def run_pipeline(
         print(f"\n  [Judge] Re-evaluating revision #{revision_count}...")
         with _timed(f"Judge re-evaluation #{revision_count}"):
             judge_result = judge.run(letter, auditor_result, irdai_result, case_id)
+            judge_result = validate_agent_output("Judge", judge_result)
 
         score = judge_result.get("overall_score", 0)
         recommendation = judge_result.get("recommendation", "APPROVE")
