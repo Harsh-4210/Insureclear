@@ -298,6 +298,9 @@ def call_llm_json(prompt: str, system_prompt: str = "", max_retries: int = 3) ->
         return _call_native_json(prompt + json_instruction, system_prompt, max_retries)
     except (ValueError, KeyError, json.JSONDecodeError):
         pass
+    except RuntimeError as error:
+        if "json_validate_failed" not in str(error):
+            raise
 
     # Fallback: standard call + parse
     raw = call_llm(

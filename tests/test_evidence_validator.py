@@ -37,3 +37,11 @@ def test_empty_sources_are_an_explicit_validation_error():
     result = validate_appeal_letter("A draft appeal", {})
     assert not result.valid
     assert result.errors[0].category == "missing_sources"
+
+
+def test_normalizes_unicode_spaces_and_currency_labels():
+    result = validate_appeal_letter(
+        "The denial dated 20\u202fNov\u202f2025 concerns INR\u202f70,000.",
+        {"denial": "The denial dated 20 Nov 2025 concerns Rs 70,000."},
+    )
+    assert result.valid

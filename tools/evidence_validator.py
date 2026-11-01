@@ -57,7 +57,7 @@ _CLAUSE = re.compile(
 _ID = re.compile(
     r"\b(?:policy|claim|case|member|certificate|customer|UHID|"
     r"reference|ref(?:erence)?)\s*(?:number|no\.?|#|id)?\s*[:\-]?\s*"
-    r"[A-Z0-9][A-Z0-9/_-]{3,}\b",
+    r"(?=[A-Z0-9/_-]*\d)[A-Z0-9][A-Z0-9/_-]{3,}\b",
     re.I,
 )
 _CASE_LAW = re.compile(
@@ -75,11 +75,18 @@ _MEDICAL = re.compile(
 
 
 def _normalise(value: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", value.lower())
+    return re.sub(r"[^a-z0-9]", "", value.replace("\u00a0", " ").replace("\u202f", " ").lower())
 
 
 def _present(value: str, source: str) -> bool:
-    return _normalise(value) in _normalise(source)
+    if _normalise(value) in _normalise(source):
+        return True
+    amount = re.search(r"\d[\d,]*(?:\.\d+)?", value)
+    if amount and re.search(r"\d[\d,]*(?:\.\d+)?", source):
+        value_digits = re.sub(r"\D", "", amount.group())
+        source_digits = {re.sub(r"\D", "", match) for match in re.findall(r"\d[\d,]*(?:\.\d+)?", source)}
+        return value_digits in source_digits
+    return False
 
 
 def _add_missing(issues: list[EvidenceIssue], category: str, values, source: str):
@@ -129,7 +136,8 @@ def validate_appeal_letter(
             ))
 
     for sentence in re.split(r"(?<=[.!?])\s+", letter):
-        if _MEDICAL.search(sentence) and not _present(sentence, source_text):
+        medical_terms = _MEDICAL.findall(sentence)
+        if medical_terms and not any(_present(term, source_text) for term in medical_terms):
             issues.append(EvidenceIssue(
                 "unsupported_medical_claim", sentence.strip(),
                 "Medical claim is not supported by supplied sources",

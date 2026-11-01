@@ -32,6 +32,10 @@ request, not an aggressive appeal. Do not accuse the insurer of an IRDAI violati
 Treat every regulatory concern and escalation route as a review lead requiring manual
 verification. Ask the insurer to confirm the clause, calculations, and reasons, and
 make escalation conditional on an unsatisfactory explanation or new evidence.
+Use only dates, amounts, names, identifiers, and clauses explicitly present in the
+claim facts or policy findings. Do not invent hospitalisation dates, diagnoses,
+medical records, statutory deadlines, circular numbers, case law, or evidence of
+disclosure. If a fact is missing, ask the insurer to provide it.
 """
     return ""
 

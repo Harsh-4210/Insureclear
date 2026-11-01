@@ -7,6 +7,7 @@ timing, validation, and assembles the final output package.
 
 import sys
 import time
+import json
 from typing import Callable, Any
 from pathlib import Path
 
@@ -228,8 +229,48 @@ def run_pipeline(
     # Ground the final draft in the documents before it is written to disk.
     evidence_validation = validate_appeal_letter(
         letter,
-        {"denial": denial_text, "policy": policy_text, "regulatory": regulatory_text},
+        {
+            "denial": denial_text,
+            "policy": policy_text,
+            "regulatory": regulatory_text or json.dumps(irdai_result),
+        },
     )
+    if not evidence_validation.valid:
+        evidence_feedback = {
+            "hallucination_flags": [
+                f"{issue.category}: {issue.value}" for issue in evidence_validation.issues
+            ],
+            "missing_elements": [],
+            "weak_arguments": [],
+            "if_revise_top_changes": [
+                "Remove or rewrite every claim listed as unsupported. Use only facts present in the supplied documents or ask for clarification."
+            ],
+        }
+        with _timed("Evidence correction"):
+            corrected_letter = appeal_writer.revise(
+                original_letter=letter,
+                judge_feedback=evidence_feedback,
+                auditor_output=auditor_result,
+                irdai_output=irdai_result,
+                case_id=case_id,
+                revision_number=revision_count + 1,
+            )
+        corrected_letter = validate_agent_output("Appeal Writer evidence correction", corrected_letter)
+        corrected_validation = validate_appeal_letter(
+            corrected_letter,
+            {
+                "denial": denial_text,
+                "policy": policy_text,
+                "regulatory": regulatory_text or json.dumps(irdai_result),
+            },
+        )
+        if corrected_validation.valid:
+            letter = corrected_letter
+            evidence_validation = corrected_validation
+            print("\n  Evidence correction: passed")
+        else:
+            letter = corrected_letter
+            evidence_validation = corrected_validation
     if not evidence_validation.valid:
         print(
             f"\n  Evidence validation: {len(evidence_validation.issues)} "
