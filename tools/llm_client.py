@@ -163,10 +163,10 @@ def _call_groq(
             wait = _groq_retry_wait(response.headers, attempt)
             with _groq_rate_lock:
                 _groq_key_cooldowns[groq_key] = time.time() + wait
-            print(f"[llm] Groq 429. Waiting {wait:.1f}s before retry {attempt}/{max_retries}...")
-            time.sleep(wait)
-            with _groq_rate_lock:
-                _groq_key_cooldowns[groq_key] = time.time()
+            print(
+                f"[llm] Groq 429. Key cooled down for {wait:.1f}s; "
+                f"trying another key (retry {attempt}/{max_retries})..."
+            )
             continue
         if response.status_code >= 500:
             _total_retries += 1
