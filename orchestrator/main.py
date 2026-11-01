@@ -17,6 +17,7 @@ from tools.pdf_reader import extract_text_from_pdf
 from tools.io_utils import create_output_dir, save_final_output
 from tools.llm_client import get_stats
 from tools.agent_validation import validate_agent_output
+from tools.evidence_validator import validate_appeal_letter
 from agents import auditor, policy_analyst, irdai_checker, appeal_writer, judge
 
 
@@ -60,6 +61,7 @@ def run_pipeline(
     denial_text: str = None,
     policy_text: str = None,
     progress_callback: ProgressCallback | None = None,
+    regulatory_text: str = None,
 ) -> dict:
     """
     Full pipeline: PDF inputs → appeal letter + scorecard.
@@ -70,6 +72,7 @@ def run_pipeline(
         case_id: Unique ID for this case (used for checkpointing)
         denial_text: Pre-extracted denial text (skips PDF reading if provided)
         policy_text: Pre-extracted policy text (skips PDF reading if provided)
+        regulatory_text: Optional supplied regulatory/knowledge source text
 
     Returns:
         Dict with all outputs and the final appeal letter path
@@ -222,6 +225,22 @@ def run_pipeline(
     if revision_count > 0:
         print(f"\n  Total revisions: {revision_count}")
 
+    # Ground the final draft in the documents before it is written to disk.
+    evidence_validation = validate_appeal_letter(
+        letter,
+        {"denial": denial_text, "policy": policy_text, "regulatory": regulatory_text},
+    )
+    if not evidence_validation.valid:
+        print(
+            f"\n  Evidence validation: {len(evidence_validation.issues)} "
+            "unsupported claim(s) found; output marked as invalid"
+        )
+        recommendation = "VALIDATION_ERROR"
+        emit("evidence_validation", "Appeal contains unsupported claims", 98, "error")
+    else:
+        print("\n  Evidence validation: passed")
+        emit("evidence_validation", "Appeal grounded in supplied sources", 98, "done")
+
     # ── Assemble full report ──────────────────────────────────────
     pipeline_time = time.time() - pipeline_start
     llm_stats = get_stats()
@@ -238,6 +257,7 @@ def run_pipeline(
         "irdai_checker": irdai_result,
         "judge": judge_result,
         "appeal_letter": letter,
+        "evidence_validation": evidence_validation.as_dict(),
         "artifacts": {
             "output_dir": str(output_dir),
             "appeal_letter_path": str(output_dir / "appeal_letter.txt"),

@@ -1,5 +1,6 @@
 from eval.cases import CASES, build_documents
 from eval.score import find_unsupported_ids, score_case, summarise
+from eval.run_eval import check_regression_gates
 
 
 CASE = next(c for c in CASES if c["id"] == "c01_moratorium")
@@ -69,3 +70,18 @@ def test_summary_counts_only_cases_with_a_key_argument():
     assert summary["key_argument_cases"] == 1
     assert summary["key_argument_found"] == 1
     assert summary["verdict_correct"] == 2
+    assert summary["verdict_accuracy"] == 1.0
+    assert summary["unsupported_claim_rate"] == 0.0
+
+
+def test_regression_gates_report_accuracy_and_unsupported_claim_failures():
+    summary = {"verdict_accuracy": 0.5, "unsupported_claim_rate": 0.25, "failed_cases": 0}
+    failures = check_regression_gates(summary, 0.8, 0.1)
+    assert len(failures) == 2
+
+
+def test_regression_gates_include_pipeline_failures():
+    failures = check_regression_gates(
+        {"verdict_accuracy": 1.0, "unsupported_claim_rate": 0.0, "failed_cases": 1}
+    )
+    assert failures == ["1 case(s) failed to run"]

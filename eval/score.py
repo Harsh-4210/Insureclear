@@ -86,13 +86,17 @@ def score_case(report: dict, case: dict, sources: list[str]) -> dict:
     """All checks for one case."""
     letter = report.get("appeal_letter", "") or ""
     stats = report.get("pipeline_stats", {})
+    unsupported_ids = find_unsupported_ids(letter, sources)
+    evidence_errors = report.get("evidence_validation", {}).get("errors", [])
+    unsupported_claims = evidence_errors or [{"category": "unsupported_id", "value": value} for value in unsupported_ids]
     return {
         "id": case["id"],
         "extraction": score_extraction(report.get("auditor", {}), case),
         "verdict": score_verdict(report.get("policy_analyst", {}), case),
         "letter_facts": score_letter_facts(letter, case),
         "key_argument": score_key_argument(letter, case),
-        "unsupported_ids": find_unsupported_ids(letter, sources),
+        "unsupported_ids": unsupported_ids,
+        "unsupported_claims": unsupported_claims,
         "judge_final_score": stats.get("final_score"),
         "revisions": stats.get("revision_count"),
         "seconds": stats.get("total_time_seconds"),
@@ -107,14 +111,17 @@ def summarise(results: list[dict]) -> dict:
         return {"cases": 0}
     argued = [r for r in results if r["key_argument"]["applicable"]]
     judge_scores = [r["judge_final_score"] for r in results if isinstance(r["judge_final_score"], (int, float))]
+    unsupported_cases = sum(1 for r in results if r.get("unsupported_claims") or r.get("unsupported_ids", []))
     return {
         "cases": n,
         "extraction_accuracy": round(sum(r["extraction"]["score"] for r in results) / n, 3),
         "verdict_correct": sum(r["verdict"]["correct"] for r in results),
+        "verdict_accuracy": round(sum(r["verdict"]["correct"] for r in results) / n, 3),
         "letter_fact_accuracy": round(sum(r["letter_facts"]["score"] for r in results) / n, 3),
         "key_argument_found": sum(r["key_argument"]["found"] for r in argued),
         "key_argument_cases": len(argued),
-        "letters_with_unsupported_ids": sum(1 for r in results if r["unsupported_ids"]),
+        "letters_with_unsupported_ids": unsupported_cases,
+        "unsupported_claim_rate": round(unsupported_cases / n, 3),
         "mean_judge_score": round(sum(judge_scores) / len(judge_scores), 3) if judge_scores else None,
         "mean_revisions": round(sum(r["revisions"] or 0 for r in results) / n, 2),
         "mean_seconds": round(sum(r["seconds"] or 0 for r in results) / n, 1),

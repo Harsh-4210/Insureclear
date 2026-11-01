@@ -49,6 +49,32 @@ def _apply_citation_review_metadata(result: dict) -> dict:
   return result
 
 
+def _apply_valid_denial_guardrail(result: dict, policy_analyst_output: dict) -> dict:
+  """Keep a facially valid denial in a review posture, not an advocacy posture."""
+  if policy_analyst_output.get("rejection_appears_valid") is not True:
+    return result
+
+  result["conflict_metadata"] = {
+    "rejection_appears_valid": True,
+    "regulatory_posture": "review_and_explanation",
+    "uncertainty": "The policy analysis supports the denial; regulatory conclusions require human verification.",
+    "escalation_claims": "Do not present as strong assertions without new evidence.",
+  }
+  for violation in result.get("potential_insurer_violations", []):
+    violation["strength"] = "weak"
+    violation["assertion_status"] = "review_only"
+    violation["verification_status"] = CITATION_REVIEW_STATUS
+  for point in result.get("key_legal_points_for_appeal", []):
+    point["argument_strength"] = "weak"
+    point["assertion_status"] = "review_only"
+  pathway = result.setdefault("appeal_pathway", {})
+  pathway["recommended_first_step"] = "internal_grievance"
+  pathway["posture"] = "request_review_and_explanation"
+  pathway["estimated_success_probability"] = "not_estimated"
+  pathway["escalation_condition"] = "Escalate only after the insurer's explanation is reviewed or new evidence is found."
+  return result
+
+
 def run(auditor_output: dict, policy_analyst_output: dict, case_id: str) -> dict:
     """
     Check the denial against IRDAI regulations.
@@ -56,7 +82,7 @@ def run(auditor_output: dict, policy_analyst_output: dict, case_id: str) -> dict
     """
     cached = load_checkpoint(case_id, "irdai_checker")
     if cached:
-        return cached
+        return _apply_valid_denial_guardrail(cached, policy_analyst_output)
 
     print("\n[IRDAI Checker] Checking against Indian insurance regulations...")
 
@@ -172,6 +198,7 @@ Return a JSON object:
             call_llm_json(correction_prompt, system_prompt=SYSTEM_PROMPT),
         )
     result = _apply_citation_review_metadata(result)
+    result = _apply_valid_denial_guardrail(result, policy_analyst_output)
     save_checkpoint(case_id, "irdai_checker", result)
     print("[IRDAI Checker] ✓ Done")
     return result

@@ -15,6 +15,7 @@ Usage:
 
 import argparse
 import json
+import os
 import sys
 import time
 import traceback
@@ -80,6 +81,10 @@ def write_summary(run_dir: Path, results: list[dict], failures: list[dict]) -> d
     summary["model"] = f"{llm_client.PROVIDER}:{llm_client.MODEL_NAME}"
     summary["reasoning_effort"] = llm_client.GROQ_REASONING_EFFORT if llm_client.PROVIDER == "groq" else None
     summary["total_tokens"] = llm_client.get_stats()["total_tokens"]
+    llm_stats = llm_client.get_stats()
+    summary["llm_calls"] = llm_stats["total_calls"]
+    summary["llm_retries"] = llm_stats["total_retries"]
+    summary["llm_429s"] = llm_stats["total_429s"]
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     lines = [
@@ -102,12 +107,15 @@ def write_summary(run_dir: Path, results: list[dict], failures: list[dict]) -> d
             "",
             f"- Fact extraction accuracy: {summary['extraction_accuracy']:.0%}",
             f"- Correct valid/challengeable verdict: {summary['verdict_correct']}/{summary['cases']}",
+            f"- Verdict accuracy: {summary['verdict_accuracy']:.0%}",
             f"- Letter fact accuracy: {summary['letter_fact_accuracy']:.0%}",
             f"- Winning argument made: {summary['key_argument_found']}/{summary['key_argument_cases']}",
-            f"- Letters with an unsupported reference number: {summary['letters_with_unsupported_ids']}/{summary['cases']}",
+            f"- Cases with unsupported claims: {summary['letters_with_unsupported_ids']}/{summary['cases']} "
+            f"({summary['unsupported_claim_rate']:.0%})",
             f"- Mean judge score: {summary['mean_judge_score']}, mean revisions: {summary['mean_revisions']}, "
             f"mean time per case: {summary['mean_seconds']}s",
             f"- Failed cases: {summary['failed_cases']}",
+            f"- LLM calls: {summary['llm_calls']}, retries: {summary['llm_retries']}, 429s: {summary['llm_429s']}",
         ]
     if failures:
         lines += ["", "## Failures", "", "| Case | Error |", "|---|---|"]
@@ -116,10 +124,44 @@ def write_summary(run_dir: Path, results: list[dict], failures: list[dict]) -> d
     return summary
 
 
+def check_regression_gates(
+    summary: dict,
+    min_verdict_accuracy: float | None = None,
+    max_unsupported_claim_rate: float | None = None,
+) -> list[str]:
+    """Return CI-friendly gate failures without raising or hiding the report."""
+    failures = []
+    if min_verdict_accuracy is not None and summary.get("verdict_accuracy", 0) < min_verdict_accuracy:
+        failures.append(
+            f"verdict accuracy {summary.get('verdict_accuracy', 0):.3f} "
+            f"is below {min_verdict_accuracy:.3f}"
+        )
+    if max_unsupported_claim_rate is not None and summary.get("unsupported_claim_rate", 0) > max_unsupported_claim_rate:
+        failures.append(
+            f"unsupported claim rate {summary.get('unsupported_claim_rate', 0):.3f} "
+            f"exceeds {max_unsupported_claim_rate:.3f}"
+        )
+    if summary.get("failed_cases", 0):
+        failures.append(f"{summary['failed_cases']} case(s) failed to run")
+    return failures
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the InsureClear evaluation")
     parser.add_argument("--only", nargs="*", help="Run only cases whose id starts with these prefixes")
     parser.add_argument("--resume", help="Existing run id to continue")
+    parser.add_argument(
+        "--min-verdict-accuracy", type=float,
+        default=float(os.environ["EVAL_MIN_VERDICT_ACCURACY"])
+        if os.environ.get("EVAL_MIN_VERDICT_ACCURACY") else None,
+        help="Fail (exit 1) when verdict accuracy is below this value",
+    )
+    parser.add_argument(
+        "--max-unsupported-claim-rate", type=float,
+        default=float(os.environ["EVAL_MAX_UNSUPPORTED_CLAIM_RATE"])
+        if os.environ.get("EVAL_MAX_UNSUPPORTED_CLAIM_RATE") else None,
+        help="Fail (exit 1) when unsupported-claim case rate exceeds this value",
+    )
     args = parser.parse_args()
     _throttle_gemini()
 
@@ -178,7 +220,11 @@ def main() -> None:
     summary = write_summary(run_dir, results, failures)
     print(json.dumps(summary, indent=2))
     print(f"\nResults: {run_dir}")
-    if failures:
+    gate_failures = check_regression_gates(
+        summary, args.min_verdict_accuracy, args.max_unsupported_claim_rate
+    )
+    if gate_failures:
+        print("[eval] regression gate failed: " + "; ".join(gate_failures), file=sys.stderr)
         raise SystemExit(1)
 
 

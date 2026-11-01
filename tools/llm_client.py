@@ -24,6 +24,8 @@ _client_initialised = False
 _total_calls = 0
 _total_time = 0.0
 _total_tokens = 0
+_total_retries = 0
+_total_429s = 0
 _groq_rate_lock = threading.Lock()
 _groq_not_before = 0.0
 _groq_key_index = 0
@@ -61,6 +63,8 @@ def get_stats() -> dict:
         "model": MODEL_NAME,
         "total_calls": _total_calls,
         "total_tokens": _total_tokens,
+        "total_retries": _total_retries,
+        "total_429s": _total_429s,
         "total_time_seconds": round(_total_time, 2),
         "avg_time_per_call": round(_total_time / max(_total_calls, 1), 2),
     }
@@ -112,7 +116,7 @@ def _call_groq(
     One Groq chat completion. On 429 it waits for the time Groq asks for
     (retry-after header) instead of a fixed short backoff.
     """
-    global _total_calls, _total_time, _total_tokens
+    global _total_calls, _total_time, _total_tokens, _total_retries, _total_429s
 
     messages = []
     if system_prompt:
@@ -149,12 +153,14 @@ def _call_groq(
                 timeout=180,
             )
         except httpx.HTTPError as e:
+            _total_retries += 1
             if attempt == max_retries:
                 raise RuntimeError(f"Groq call failed after {max_retries} attempts: {e}")
             time.sleep(2 ** attempt)
             continue
 
         if response.status_code == 429:
+            _total_429s += 1
             if attempt == max_retries:
                 raise RuntimeError(f"Groq call failed after {max_retries} attempts: {response.text[:300]}")
             wait = _groq_retry_wait(response.headers, attempt)
@@ -168,6 +174,7 @@ def _call_groq(
                 _groq_key_cooldowns[groq_key] = time.time()
             continue
         if response.status_code >= 500:
+            _total_retries += 1
             if attempt == max_retries:
                 raise RuntimeError(f"Groq call failed after {max_retries} attempts: {response.text[:300]}")
             wait = float(2 ** attempt)
@@ -235,7 +242,7 @@ def call_llm(
     Retries on rate limit / transient errors with exponential backoff.
     temperature=0.2 keeps outputs factual and consistent (not creative).
     """
-    global _total_calls, _total_time
+    global _total_calls, _total_time, _total_retries, _total_429s
     _init()
 
     if PROVIDER == "groq":
@@ -260,8 +267,10 @@ def call_llm(
             _total_time += elapsed
             return response.text.strip()
         except Exception as e:
+            _total_retries += 1
             error_str = str(e).lower()
             if "quota" in error_str or "rate" in error_str:
+                _total_429s += 1
                 wait = 2 ** attempt
                 print(f"[llm] Rate limit hit. Waiting {wait}s before retry {attempt}/{max_retries}...")
                 time.sleep(wait)
@@ -302,7 +311,7 @@ def call_llm_json(prompt: str, system_prompt: str = "", max_retries: int = 3) ->
 
 def _call_native_json(prompt: str, system_prompt: str, max_retries: int) -> dict:
     """Use the provider's native JSON response mode."""
-    global _total_calls, _total_time
+    global _total_calls, _total_time, _total_retries, _total_429s
 
     if PROVIDER == "groq":
         raw = _call_groq(prompt, system_prompt, 0.1, 4096, json_mode=True)
@@ -331,6 +340,9 @@ def _call_native_json(prompt: str, system_prompt: str, max_retries: int) -> dict
             raw = response.text.strip()
             return _parse_json_response(raw)
         except Exception as e:
+            _total_retries += 1
+            if "quota" in str(e).lower() or "rate" in str(e).lower():
+                _total_429s += 1
             if attempt < max_retries:
                 time.sleep(2 ** attempt)
             else:

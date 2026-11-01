@@ -23,6 +23,35 @@ You write for Indian insurers, citing IRDAI rules, not US/UK law.
 """
 
 
+def _valid_denial_posture(policy_analyst_output: dict) -> str:
+    if policy_analyst_output.get("rejection_appears_valid") is True:
+        return """
+VALID-DENIAL GUARDRAIL (mandatory):
+The policy analysis says the rejection appears valid. Draft a review-and-explanation
+request, not an aggressive appeal. Do not accuse the insurer of an IRDAI violation.
+Treat every regulatory concern and escalation route as a review lead requiring manual
+verification. Ask the insurer to confirm the clause, calculations, and reasons, and
+make escalation conditional on an unsatisfactory explanation or new evidence.
+"""
+    return ""
+
+
+def _enforce_valid_denial_posture(
+    letter: str, policy_analyst_output: dict, irdai_output: dict | None = None
+) -> str:
+    """Add a deterministic, non-accusatory framing if the model omitted it."""
+    valid = policy_analyst_output.get("rejection_appears_valid") is True
+    if not valid or "review and explanation" in letter.lower():
+        return letter
+    notice = (
+        "Posture: This is a request for review and explanation because the policy "
+        "analysis indicates that the rejection appears valid. Regulatory concerns "
+        "are not asserted as violations; any escalation should depend on the "
+        "insurer's explanation or new evidence.\n\n"
+    )
+    return notice + letter
+
+
 def run(
     auditor_output: dict,
     policy_analyst_output: dict,
@@ -44,6 +73,7 @@ def run(
     legal_points = irdai_output.get("key_legal_points_for_appeal", [])
     violations = irdai_output.get("potential_insurer_violations", [])
     docs_to_attach = irdai_output.get("what_documents_to_attach", [])
+    posture = _valid_denial_posture(policy_analyst_output)
 
     prompt = f"""
 Write a formal insurance appeal letter using these details:
@@ -87,9 +117,11 @@ Be specific — cite exact clause numbers and supplied IRDAI regulation names.
 Label citations that require manual verification instead of inventing support.
 Do not use emotional language.
 Write [POLICYHOLDER NAME], [DATE], [INSURER ADDRESS] as placeholders where information is missing.
+{posture}
 """
 
     letter = call_llm(prompt, system_prompt=SYSTEM_PROMPT, temperature=0.3)
+    letter = _enforce_valid_denial_posture(letter, policy_analyst_output, irdai_output)
     save_checkpoint(case_id, "appeal_writer", {"letter": letter})
     print("[Appeal Writer] ✓ Done")
     return letter
@@ -144,9 +176,19 @@ VERIFIED FACTS (use only these):
 Rewrite the COMPLETE appeal letter with these fixes applied.
 Do NOT add any new facts that aren't in the verified facts above.
 Maintain formal Indian legal correspondence style.
+If the regulatory output contains conflict_metadata.regulatory_posture =
+"review_and_explanation", preserve a review-and-explanation posture and do not
+turn regulatory leads into accusations.
 """
 
     revised_letter = call_llm(prompt, system_prompt=SYSTEM_PROMPT, temperature=0.3)
+    revised_letter = _enforce_valid_denial_posture(
+        revised_letter,
+        {"rejection_appears_valid": irdai_output.get("conflict_metadata", {}).get(
+            "rejection_appears_valid", False
+        )},
+        irdai_output,
+    )
 
     # Save as revision checkpoint
     checkpoint_key = f"appeal_writer_v{revision_number + 1}"
