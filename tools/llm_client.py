@@ -1,6 +1,8 @@
 """
 LLM Client
-Gemini 2.0 Flash as primary model.
+Two providers, picked with LLM_PROVIDER in .env:
+  gemini (default) — Gemini Flash via google-generativeai
+  groq             — openai/gpt-oss-120b via Groq's OpenAI-compatible API
 All agents call this — so if you ever swap models, you change it in one place.
 """
 
@@ -8,19 +10,40 @@ import os
 import time
 import json
 import re
-import google.generativeai as genai
+import threading
+import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
 
+PROVIDER = os.getenv("LLM_PROVIDER", "gemini").lower()
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_REASONING_EFFORT = os.getenv("GROQ_REASONING_EFFORT", "medium")
+
 _client_initialised = False
 _total_calls = 0
 _total_time = 0.0
-MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+_total_tokens = 0
+_groq_rate_lock = threading.Lock()
+_groq_not_before = 0.0
+_groq_key_index = 0
+_groq_key_cooldowns = {}
+if PROVIDER == "groq":
+    MODEL_NAME = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+    genai = None
+else:
+    import google.generativeai as genai
+    MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 
 
 def _init():
     global _client_initialised
+    if PROVIDER == "groq":
+        if not _groq_api_keys():
+            raise EnvironmentError(
+                "GROQ_API_KEY or GROQ_API_KEYS not found. Add one to .env."
+            )
+        return
     if not _client_initialised:
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
@@ -34,10 +57,170 @@ def _init():
 def get_stats() -> dict:
     """Return LLM usage stats for this session."""
     return {
+        "provider": PROVIDER,
+        "model": MODEL_NAME,
         "total_calls": _total_calls,
+        "total_tokens": _total_tokens,
         "total_time_seconds": round(_total_time, 2),
         "avg_time_per_call": round(_total_time / max(_total_calls, 1), 2),
     }
+
+
+def _groq_api_keys() -> list[str]:
+    """Return configured keys from a pool or numbered environment variables."""
+    pool = [key.strip() for key in os.getenv("GROQ_API_KEYS", "").split(",") if key.strip()]
+    if pool:
+        return pool
+
+    numbered = []
+    for name, value in os.environ.items():
+        match = re.fullmatch(r"GROQ_API_KEY_(\d+)", name)
+        if match and value.strip():
+            numbered.append((int(match.group(1)), value.strip()))
+    if numbered:
+        return [value for _, value in sorted(numbered)]
+
+    key = os.getenv("GROQ_API_KEY", "").strip()
+    return [key] if key else []
+
+
+def _select_groq_key() -> tuple[str, float]:
+    """Select an available key and return any required cooldown wait."""
+    global _groq_key_index
+    keys = _groq_api_keys()
+    now = time.time()
+    with _groq_rate_lock:
+        for offset in range(len(keys)):
+            index = (_groq_key_index + offset) % len(keys)
+            key = keys[index]
+            if _groq_key_cooldowns.get(key, 0.0) <= now:
+                _groq_key_index = (index + 1) % len(keys)
+                return key, 0.0
+        wait = min(_groq_key_cooldowns.get(key, now) for key in keys) - now
+        return keys[_groq_key_index % len(keys)], max(wait, 0.0)
+
+
+def _call_groq(
+    prompt: str,
+    system_prompt: str,
+    temperature: float,
+    max_output_tokens: int,
+    json_mode: bool,
+    max_retries: int = 6,
+) -> str:
+    """
+    One Groq chat completion. On 429 it waits for the time Groq asks for
+    (retry-after header) instead of a fixed short backoff.
+    """
+    global _total_calls, _total_time, _total_tokens
+
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
+    body = {
+        "model": MODEL_NAME,
+        "messages": messages,
+        "temperature": temperature,
+        # gpt-oss reasoning tokens count toward this limit, so leave room for them
+        "max_completion_tokens": max_output_tokens + 4096,
+        "reasoning_effort": GROQ_REASONING_EFFORT,
+        "include_reasoning": False,
+    }
+    if json_mode:
+        body["response_format"] = {"type": "json_object"}
+    headers = {"Authorization": f"Bearer {os.getenv('GROQ_API_KEY')}"}
+
+    global _groq_not_before
+
+    for attempt in range(1, max_retries + 1):
+        groq_key, key_wait = _select_groq_key()
+        with _groq_rate_lock:
+            wait = max(_groq_not_before - time.time(), key_wait)
+        if wait > 0:
+            time.sleep(wait)
+
+        start = time.time()
+        try:
+            response = httpx.post(
+                GROQ_URL,
+                json=body,
+                headers={"Authorization": f"Bearer {groq_key}"},
+                timeout=180,
+            )
+        except httpx.HTTPError as e:
+            if attempt == max_retries:
+                raise RuntimeError(f"Groq call failed after {max_retries} attempts: {e}")
+            time.sleep(2 ** attempt)
+            continue
+
+        if response.status_code == 429:
+            if attempt == max_retries:
+                raise RuntimeError(f"Groq call failed after {max_retries} attempts: {response.text[:300]}")
+            wait = _groq_retry_wait(response.headers, attempt)
+            with _groq_rate_lock:
+                _groq_key_cooldowns[groq_key] = time.time() + wait
+                _groq_not_before = max(_groq_not_before, time.time() + wait)
+            print(f"[llm] Groq 429. Waiting {wait:.1f}s before retry {attempt}/{max_retries}...")
+            time.sleep(wait)
+            with _groq_rate_lock:
+                _groq_not_before = time.time()
+                _groq_key_cooldowns[groq_key] = time.time()
+            continue
+        if response.status_code >= 500:
+            if attempt == max_retries:
+                raise RuntimeError(f"Groq call failed after {max_retries} attempts: {response.text[:300]}")
+            wait = float(2 ** attempt)
+            print(f"[llm] Groq {response.status_code}. Waiting {wait:.0f}s before retry {attempt}/{max_retries}...")
+            time.sleep(wait)
+            continue
+        if response.status_code != 200:
+            raise RuntimeError(f"Groq error {response.status_code}: {response.text[:500]}")
+
+        data = response.json()
+        _total_calls += 1
+        _total_time += time.time() - start
+        _total_tokens += data.get("usage", {}).get("total_tokens", 0)
+        return (data["choices"][0]["message"].get("content") or "").strip()
+
+    raise RuntimeError("Groq call exhausted all retries.")
+
+
+def _duration_seconds(value: str | None) -> float | None:
+    """Parse Groq reset values such as '7.66s' or '2m59.56s'."""
+    if not value:
+        return None
+    match = re.fullmatch(
+        r"\s*(?:(?P<hours>\d+(?:\.\d+)?)h)?"
+        r"\s*(?:(?P<minutes>\d+(?:\.\d+)?)m)?"
+        r"\s*(?:(?P<seconds>\d+(?:\.\d+)?)s)?\s*",
+        value,
+        re.IGNORECASE,
+    )
+    if match and any(match.group(name) for name in ("hours", "minutes", "seconds")):
+        return (
+            float(match.group("hours") or 0) * 3600
+            + float(match.group("minutes") or 0) * 60
+            + float(match.group("seconds") or 0)
+        )
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _groq_retry_wait(headers, attempt: int) -> float:
+    """Honor Groq's retry-after/reset headers, with exponential fallback."""
+    retry_after = _duration_seconds(headers.get("retry-after"))
+    if retry_after is not None:
+        return max(retry_after + 1.0, 0.0)
+
+    reset_values = [
+        _duration_seconds(headers.get("x-ratelimit-reset-tokens")),
+        _duration_seconds(headers.get("x-ratelimit-reset-requests")),
+    ]
+    reset_waits = [value for value in reset_values if value is not None]
+    return max(reset_waits, default=float(2 ** attempt))
 
 
 def call_llm(
@@ -54,6 +237,9 @@ def call_llm(
     """
     global _total_calls, _total_time
     _init()
+
+    if PROVIDER == "groq":
+        return _call_groq(prompt, system_prompt, temperature, max_output_tokens, json_mode=False)
 
     full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
 
@@ -101,7 +287,7 @@ def call_llm_json(prompt: str, system_prompt: str = "", max_retries: int = 3) ->
     # Try native JSON mode first
     try:
         return _call_native_json(prompt + json_instruction, system_prompt, max_retries)
-    except Exception:
+    except (ValueError, KeyError, json.JSONDecodeError):
         pass
 
     # Fallback: standard call + parse
@@ -115,8 +301,12 @@ def call_llm_json(prompt: str, system_prompt: str = "", max_retries: int = 3) ->
 
 
 def _call_native_json(prompt: str, system_prompt: str, max_retries: int) -> dict:
-    """Use Gemini's native JSON response mode."""
+    """Use the provider's native JSON response mode."""
     global _total_calls, _total_time
+
+    if PROVIDER == "groq":
+        raw = _call_groq(prompt, system_prompt, 0.1, 4096, json_mode=True)
+        return _parse_json_response(raw)
 
     full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
 

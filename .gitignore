@@ -5,6 +5,7 @@ __pycache__/
 *.pyo
 *.zip
 sessions/
+eval/results/
 data/input/*.pdf
 data/input/*.txt
 data/output/
