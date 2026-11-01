@@ -27,7 +27,6 @@ _total_tokens = 0
 _total_retries = 0
 _total_429s = 0
 _groq_rate_lock = threading.Lock()
-_groq_not_before = 0.0
 _groq_key_index = 0
 _groq_key_cooldowns = {}
 if PROVIDER == "groq":
@@ -65,6 +64,7 @@ def get_stats() -> dict:
         "total_tokens": _total_tokens,
         "total_retries": _total_retries,
         "total_429s": _total_429s,
+        "groq_configured_key_count": len(_groq_api_keys()) if PROVIDER == "groq" else 0,
         "total_time_seconds": round(_total_time, 2),
         "avg_time_per_call": round(_total_time / max(_total_calls, 1), 2),
     }
@@ -135,14 +135,10 @@ def _call_groq(
         body["response_format"] = {"type": "json_object"}
     headers = {"Authorization": f"Bearer {os.getenv('GROQ_API_KEY')}"}
 
-    global _groq_not_before
-
     for attempt in range(1, max_retries + 1):
         groq_key, key_wait = _select_groq_key()
-        with _groq_rate_lock:
-            wait = max(_groq_not_before - time.time(), key_wait)
-        if wait > 0:
-            time.sleep(wait)
+        if key_wait > 0:
+            time.sleep(key_wait)
 
         start = time.time()
         try:
@@ -161,16 +157,15 @@ def _call_groq(
 
         if response.status_code == 429:
             _total_429s += 1
+            _total_retries += 1
             if attempt == max_retries:
                 raise RuntimeError(f"Groq call failed after {max_retries} attempts: {response.text[:300]}")
             wait = _groq_retry_wait(response.headers, attempt)
             with _groq_rate_lock:
                 _groq_key_cooldowns[groq_key] = time.time() + wait
-                _groq_not_before = max(_groq_not_before, time.time() + wait)
             print(f"[llm] Groq 429. Waiting {wait:.1f}s before retry {attempt}/{max_retries}...")
             time.sleep(wait)
             with _groq_rate_lock:
-                _groq_not_before = time.time()
                 _groq_key_cooldowns[groq_key] = time.time()
             continue
         if response.status_code >= 500:
