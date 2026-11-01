@@ -235,7 +235,9 @@ def run_pipeline(
             "regulatory": regulatory_text or json.dumps(irdai_result),
         },
     )
-    if not evidence_validation.valid:
+    for evidence_attempt in range(2):
+        if evidence_validation.valid:
+            break
         evidence_feedback = {
             "hallucination_flags": [
                 f"{issue.category}: {issue.value}" for issue in evidence_validation.issues
@@ -253,7 +255,7 @@ def run_pipeline(
                 auditor_output=auditor_result,
                 irdai_output=irdai_result,
                 case_id=case_id,
-                revision_number=revision_count + 1,
+                revision_number=revision_count + evidence_attempt + 1,
             )
         corrected_letter = validate_agent_output("Appeal Writer evidence correction", corrected_letter)
         corrected_validation = validate_appeal_letter(
@@ -268,9 +270,8 @@ def run_pipeline(
             letter = corrected_letter
             evidence_validation = corrected_validation
             print("\n  Evidence correction: passed")
-        else:
-            letter = corrected_letter
-            evidence_validation = corrected_validation
+        letter = corrected_letter
+        evidence_validation = corrected_validation
     if not evidence_validation.valid:
         print(
             f"\n  Evidence validation: {len(evidence_validation.issues)} "

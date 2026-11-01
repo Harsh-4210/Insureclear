@@ -45,3 +45,13 @@ def test_normalizes_unicode_spaces_and_currency_labels():
         {"denial": "The denial dated 20 Nov 2025 concerns Rs 70,000."},
     )
     assert result.valid
+
+
+def test_rejects_altered_bare_reference_ids():
+    result = validate_appeal_letter(
+        "Please review claim NGU/HC/2025/40912 and Circular IRDA/IRDAI/2022/.",
+        {"denial": "Claim NGI/HC/2025/40912."},
+    )
+    values = {issue.value for issue in result.errors if issue.category == "unsupported_id"}
+    assert "NGU/HC/2025/40912" in values
+    assert "IRDA/IRDAI/2022/" in values

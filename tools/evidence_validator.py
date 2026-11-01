@@ -60,6 +60,9 @@ _ID = re.compile(
     r"(?=[A-Z0-9/_-]*\d)[A-Z0-9][A-Z0-9/_-]{3,}\b",
     re.I,
 )
+_BARE_ID = re.compile(
+    r"\b[A-Z]{2,}(?:/[A-Z0-9]+|-[A-Z0-9]+){1,}(?:/\d{2,})?/?(?![A-Za-z0-9])"
+)
 _CASE_LAW = re.compile(
     r"\b[A-Z][A-Za-z.&' -]{2,}\s+v(?:s?\.?|ersus)\s+[A-Z][A-Za-z.&' -]{2,}"
     r"|(?:AIR\s+\d{4}|SCC\s+\d{4}|\(\d{4}\))",
@@ -81,7 +84,7 @@ def _normalise(value: str) -> str:
 def _present(value: str, source: str) -> bool:
     if _normalise(value) in _normalise(source):
         return True
-    amount = re.search(r"\d[\d,]*(?:\.\d+)?", value)
+    amount = re.search(r"(?:₹|INR|Rs\.?)\s*([\d,]+(?:\.\d+)?)", value, re.I)
     if amount and re.search(r"\d[\d,]*(?:\.\d+)?", source):
         value_digits = re.sub(r"\D", "", amount.group())
         source_digits = {re.sub(r"\D", "", match) for match in re.findall(r"\d[\d,]*(?:\.\d+)?", source)}
@@ -90,7 +93,7 @@ def _present(value: str, source: str) -> bool:
 
 
 def _add_missing(issues: list[EvidenceIssue], category: str, values, source: str):
-    seen = set()
+    seen: set[str] = set()
     for value in values:
         key = _normalise(value)
         if not key or key in seen or _present(value, source):
@@ -123,6 +126,7 @@ def validate_appeal_letter(
 
     issues: list[EvidenceIssue] = []
     _add_missing(issues, "unsupported_id", _ID.findall(letter), source_text)
+    _add_missing(issues, "unsupported_id", _BARE_ID.findall(letter), source_text)
     _add_missing(issues, "unsupported_date", _DATE.findall(letter), source_text)
     _add_missing(issues, "unsupported_amount", _AMOUNT.findall(letter), source_text)
     _add_missing(issues, "unsupported_clause", _CLAUSE.findall(letter), source_text)
