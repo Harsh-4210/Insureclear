@@ -16,7 +16,7 @@ from tools.irdai_knowledge import (
     find_applicable_regulations,
 )
 from tools.io_utils import save_checkpoint, load_checkpoint
-from tools.agent_validation import validate_agent_output
+from tools.agent_validation import AgentOutputError, validate_agent_output
 import json
 
 SYSTEM_PROMPT = """
@@ -157,10 +157,20 @@ Return a JSON object:
 }}
 """
 
-    result = validate_agent_output(
-        "IRDAI Checker",
-        call_llm_json(prompt, system_prompt=SYSTEM_PROMPT),
-    )
+    raw_result = call_llm_json(prompt, system_prompt=SYSTEM_PROMPT)
+    try:
+        result = validate_agent_output("IRDAI Checker", raw_result)
+    except AgentOutputError as first_error:
+        correction_prompt = (
+            f"{prompt}\n\n"
+            "The previous response had an invalid top-level shape: "
+            f"{first_error}. Return exactly one JSON object matching the schema above, "
+            "not a JSON array, string, or scalar."
+        )
+        result = validate_agent_output(
+            "IRDAI Checker",
+            call_llm_json(correction_prompt, system_prompt=SYSTEM_PROMPT),
+        )
     result = _apply_citation_review_metadata(result)
     save_checkpoint(case_id, "irdai_checker", result)
     print("[IRDAI Checker] ✓ Done")
