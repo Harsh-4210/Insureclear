@@ -83,6 +83,8 @@ $env:LLM_PROVIDER="groq"
 - [x] Add a second bounded correction attempt when the first rewrite remains
   unsupported.
 - [x] Detect mutated bare identifiers such as claim and circular references.
+- [x] Accept equivalent policy section references such as `1.2` and
+  `Section 1.2` when the source contains the same section number.
 - [ ] Add canonical fact comparison against the Auditor output for every
   policy number, claim number, date, amount, and insurer name.
 - [ ] Ensure a failed final validation cannot be scored as an approved appeal.
@@ -188,7 +190,7 @@ when possible.
 |---|---|---|---|---|
 | 2026-11-01 | `179e0bf` | `c01 c05`, strict gates | Passed | 0% unsupported claims; 2/2 verdicts |
 | 2026-11-01 | `5f4ec82` | Automated tests | Passed | 28 tests passed |
-|  |  | Full ten-case strict gates | Pending |  |
+| 2026-11-02 | pending | Full ten-case strict gates | Failed | 9 cases scored; verdict accuracy 0.889; unsupported claim rate 0.222; c10 IRDAI top-level list failure |
 
 ## Operational commands
 

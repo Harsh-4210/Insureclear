@@ -184,19 +184,25 @@ Return a JSON object:
 """
 
     raw_result = call_llm_json(prompt, system_prompt=SYSTEM_PROMPT)
-    try:
-        result = validate_agent_output("IRDAI Checker", raw_result)
-    except AgentOutputError as first_error:
-        correction_prompt = (
-            f"{prompt}\n\n"
-            "The previous response had an invalid top-level shape: "
-            f"{first_error}. Return exactly one JSON object matching the schema above, "
-            "not a JSON array, string, or scalar."
-        )
-        result = validate_agent_output(
-            "IRDAI Checker",
-            call_llm_json(correction_prompt, system_prompt=SYSTEM_PROMPT),
-        )
+    result = None
+    correction_prompt = prompt
+    for correction_attempt in range(2):
+        try:
+            result = validate_agent_output("IRDAI Checker", raw_result)
+            break
+        except AgentOutputError as error:
+            if correction_attempt == 1:
+                raise
+            correction_prompt = (
+                f"{prompt}\n\n"
+                "The previous response had an invalid top-level shape: "
+                f"{error}. Return exactly one JSON object matching the schema above, "
+                "not a JSON array, string, or scalar. Do not return a list of violations "
+                "as the top-level response."
+            )
+            raw_result = call_llm_json(correction_prompt, system_prompt=SYSTEM_PROMPT)
+    if result is None:
+        raise AgentOutputError("IRDAI Checker returned no validated result")
     result = _apply_citation_review_metadata(result)
     result = _apply_valid_denial_guardrail(result, policy_analyst_output)
     save_checkpoint(case_id, "irdai_checker", result)

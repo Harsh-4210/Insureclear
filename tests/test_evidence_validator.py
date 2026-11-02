@@ -55,3 +55,11 @@ def test_rejects_altered_bare_reference_ids():
     values = {issue.value for issue in result.errors if issue.category == "unsupported_id"}
     assert "NGU/HC/2025/40912" in values
     assert "IRDA/IRDAI/2022/" in values
+
+
+def test_accepts_section_prefix_when_number_is_in_policy():
+    result = validate_appeal_letter(
+        "The policy's Section 1.2 covers the procedure.",
+        {"policy": "1.2 Day Care Procedures are covered."},
+    )
+    assert result.valid

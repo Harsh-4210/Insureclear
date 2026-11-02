@@ -84,6 +84,18 @@ def _normalise(value: str) -> str:
 def _present(value: str, source: str) -> bool:
     if _normalise(value) in _normalise(source):
         return True
+    clause_number = re.fullmatch(
+        r"(?:clause|section|regulation|rule|article|paragraph|para|exclusion)"
+        r"\s*(?:no\.?|number)?\s*([a-z]?\d+(?:\.\d+)*(?:\([a-z0-9]+\))?)",
+        value.strip(),
+        re.I,
+    )
+    if clause_number and re.search(
+        rf"(?<![\d.]){re.escape(clause_number.group(1))}(?![\d.])",
+        source,
+        re.I,
+    ):
+        return True
     amount = re.search(r"(?:₹|INR|Rs\.?)\s*([\d,]+(?:\.\d+)?)", value, re.I)
     if amount and re.search(r"\d[\d,]*(?:\.\d+)?", source):
         value_digits = re.sub(r"\D", "", amount.group())
