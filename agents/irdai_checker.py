@@ -183,7 +183,11 @@ Return a JSON object:
 }}
 """
 
-    raw_result = call_llm_json(prompt, system_prompt=SYSTEM_PROMPT)
+    raw_result = call_llm_json(
+        prompt,
+        system_prompt=SYSTEM_PROMPT,
+        max_output_tokens=2048,
+    )
     result = None
     correction_prompt = prompt
     for correction_attempt in range(2):
@@ -200,7 +204,11 @@ Return a JSON object:
                 "not a JSON array, string, or scalar. Do not return a list of violations "
                 "as the top-level response."
             )
-            raw_result = call_llm_json(correction_prompt, system_prompt=SYSTEM_PROMPT)
+            raw_result = call_llm_json(
+                correction_prompt,
+                system_prompt=SYSTEM_PROMPT,
+                max_output_tokens=2048,
+            )
     if result is None:
         raise AgentOutputError("IRDAI Checker returned no validated result")
     result = _apply_citation_review_metadata(result)

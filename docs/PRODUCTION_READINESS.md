@@ -141,6 +141,9 @@ $env:LLM_PROVIDER="groq"
 - [x] Apply cooldowns per key instead of globally.
 - [x] Track total calls, tokens, retries, 429s, runtime, and configured key
   count.
+- [x] Rotate immediately after a 429 and honor body-level Groq retry durations.
+- [x] Bound the Groq reasoning-token budget with
+  `GROQ_REASONING_TOKEN_BUDGET`.
 - [x] Fall back from native JSON mode only for JSON validation failures.
 - [ ] Run the full suite and confirm retry metrics distinguish:
   - First-attempt 429s.
@@ -191,6 +194,7 @@ when possible.
 | 2026-11-01 | `179e0bf` | `c01 c05`, strict gates | Passed | 0% unsupported claims; 2/2 verdicts |
 | 2026-11-01 | `5f4ec82` | Automated tests | Passed | 28 tests passed |
 | 2026-11-02 | pending | Full ten-case strict gates | Failed | 9 cases scored; verdict accuracy 0.889; unsupported claim rate 0.222; c10 IRDAI top-level list failure |
+| 2026-11-02 | pending | Full ten-case strict gates | Failed | 8 cases scored; verdict accuracy 1.0; unsupported claim rate 0.0; c06/c09 exhausted Groq TPM retries |
 
 ## Operational commands
 

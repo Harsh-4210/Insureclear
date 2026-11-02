@@ -81,3 +81,12 @@ def test_groq_reads_numbered_pool_keys(monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY_2", "second-key")
     monkeypatch.setenv("GROQ_API_KEY_1", "first-key")
     assert llm_client._groq_api_keys() == ["first-key", "second-key"]
+
+
+def test_groq_retry_wait_uses_body_duration():
+    wait = llm_client._groq_retry_wait(
+        {},
+        1,
+        '{"message":"Please try again in 45ms"}',
+    )
+    assert 0.1 <= wait <= 0.2

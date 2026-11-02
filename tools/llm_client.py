@@ -19,6 +19,7 @@ load_dotenv()
 PROVIDER = os.getenv("LLM_PROVIDER", "gemini").lower()
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_REASONING_EFFORT = os.getenv("GROQ_REASONING_EFFORT", "medium")
+GROQ_REASONING_TOKEN_BUDGET = int(os.getenv("GROQ_REASONING_TOKEN_BUDGET", "2048"))
 
 _client_initialised = False
 _total_calls = 0
@@ -104,6 +105,15 @@ def _select_groq_key() -> tuple[str, float]:
         return keys[_groq_key_index % len(keys)], max(wait, 0.0)
 
 
+def _groq_key_slot(key: str) -> int:
+    """Return a one-based pool slot for safe operational logging."""
+    keys = _groq_api_keys()
+    try:
+        return keys.index(key) + 1
+    except ValueError:
+        return 0
+
+
 def _call_groq(
     prompt: str,
     system_prompt: str,
@@ -126,8 +136,8 @@ def _call_groq(
         "model": MODEL_NAME,
         "messages": messages,
         "temperature": temperature,
-        # gpt-oss reasoning tokens count toward this limit, so leave room for them
-        "max_completion_tokens": max_output_tokens + 4096,
+        # gpt-oss reasoning tokens count toward this limit, so reserve a bounded budget
+        "max_completion_tokens": max_output_tokens + GROQ_REASONING_TOKEN_BUDGET,
         "reasoning_effort": GROQ_REASONING_EFFORT,
         "include_reasoning": False,
     }
@@ -160,11 +170,12 @@ def _call_groq(
             _total_retries += 1
             if attempt == max_retries:
                 raise RuntimeError(f"Groq call failed after {max_retries} attempts: {response.text[:300]}")
-            wait = _groq_retry_wait(response.headers, attempt)
+            wait = _groq_retry_wait(response.headers, attempt, response.text)
             with _groq_rate_lock:
                 _groq_key_cooldowns[groq_key] = time.time() + wait
             print(
-                f"[llm] Groq 429. Key cooled down for {wait:.1f}s; "
+                f"[llm] Groq 429 on pool key {_groq_key_slot(groq_key)}. "
+                f"Key cooled down for {wait:.1f}s; "
                 f"trying another key (retry {attempt}/{max_retries})..."
             )
             continue
@@ -211,8 +222,18 @@ def _duration_seconds(value: str | None) -> float | None:
         return None
 
 
-def _groq_retry_wait(headers, attempt: int) -> float:
+def _groq_retry_wait(headers, attempt: int, body: str = "") -> float:
     """Honor Groq's retry-after/reset headers, with exponential fallback."""
+    body_match = re.search(
+        r"try again in\s*(\d+(?:\.\d+)?)\s*(milliseconds?|ms|seconds?|s)",
+        body or "",
+        re.I,
+    )
+    if body_match:
+        value = float(body_match.group(1))
+        if body_match.group(2).lower().startswith("ms"):
+            value /= 1000
+        return max(value + 0.1, 0.1)
     retry_after = _duration_seconds(headers.get("retry-after"))
     if retry_after is not None:
         return max(retry_after + 1.0, 0.0)
@@ -278,7 +299,12 @@ def call_llm(
     raise RuntimeError("LLM call exhausted all retries.")
 
 
-def call_llm_json(prompt: str, system_prompt: str = "", max_retries: int = 3) -> dict:
+def call_llm_json(
+    prompt: str,
+    system_prompt: str = "",
+    max_retries: int = 3,
+    max_output_tokens: int = 2048,
+) -> dict:
     """
     Call LLM and parse JSON response.
     Uses Gemini's native JSON mode for reliable structured output.
@@ -290,7 +316,12 @@ def call_llm_json(prompt: str, system_prompt: str = "", max_retries: int = 3) ->
 
     # Try native JSON mode first
     try:
-        return _call_native_json(prompt + json_instruction, system_prompt, max_retries)
+        return _call_native_json(
+            prompt + json_instruction,
+            system_prompt,
+            max_retries,
+            max_output_tokens,
+        )
     except (ValueError, KeyError, json.JSONDecodeError):
         pass
     except RuntimeError as error:
@@ -303,16 +334,28 @@ def call_llm_json(prompt: str, system_prompt: str = "", max_retries: int = 3) ->
         system_prompt=system_prompt,
         temperature=0.1,
         max_retries=max_retries,
+        max_output_tokens=max_output_tokens,
     )
     return _parse_json_response(raw)
 
 
-def _call_native_json(prompt: str, system_prompt: str, max_retries: int) -> dict:
+def _call_native_json(
+    prompt: str,
+    system_prompt: str,
+    max_retries: int,
+    max_output_tokens: int,
+) -> dict:
     """Use the provider's native JSON response mode."""
     global _total_calls, _total_time, _total_retries, _total_429s
 
     if PROVIDER == "groq":
-        raw = _call_groq(prompt, system_prompt, 0.1, 4096, json_mode=True)
+        raw = _call_groq(
+            prompt,
+            system_prompt,
+            0.1,
+            max_output_tokens,
+            json_mode=True,
+        )
         return _parse_json_response(raw)
 
     full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
