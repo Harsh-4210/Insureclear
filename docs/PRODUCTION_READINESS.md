@@ -6,9 +6,9 @@ checkboxes and evidence sections whenever a milestone is completed.
 
 ## Current status
 
-**Last updated:** 2026-11-01  
+**Last updated:** 2026-11-05  
 **Current branch:** `main`  
-**Latest relevant commit:** `5f4ec82` (`Rotate Groq keys across cooldowns`)
+**Latest relevant commit:** `5e6513f` (`Sanitize unsupported medical claims`)
 
 ### Completed baseline
 
@@ -25,6 +25,12 @@ checkboxes and evidence sections whenever a milestone is completed.
   unavailable, the client waits for the earliest cooldown.
 - Agent output validation, structured failures, evidence validation, valid-denial
   guardrails, and bounded evidence correction are implemented.
+- Latest strict full evaluation completed all 10 cases:
+  - Extraction accuracy: 100%.
+  - Verdict accuracy: 100%.
+  - Letter-fact accuracy: 100%.
+  - Unsupported-claim rate: 0%.
+  - Failed cases: 0.
 
 ### Important limitation
 
@@ -38,14 +44,14 @@ The pipeline is production-ready only when all of the following are true:
 
 | Area | Acceptance criterion | Status |
 |---|---|---|
-| Extraction | At least 95% required facts correct on the curated regression set | ☐ |
-| Verdicts | 100% verdict accuracy on the curated regression set | ☐ |
-| Evidence | Zero unsupported document facts in final letters | ☐ |
+| Extraction | At least 95% required facts correct on the curated regression set | ☑ |
+| Verdicts | 100% verdict accuracy on the curated regression set | ☑ |
+| Evidence | Zero unsupported document facts in final letters | ☑ |
 | Regulations | Correct source/version selected for every regulatory claim | ☐ |
 | Security | No secrets in source, logs, reports, or committed artifacts | ☐ |
-| Reliability | No silent fallback or success-shaped failure | ☐ |
+| Reliability | No silent fallback or success-shaped failure | ☑ |
 | Performance | p95 case runtime below 90 seconds | ☐ |
-| Rate limits | Graceful cooldown, rotation, and retry behavior | ☐ |
+| Rate limits | Graceful cooldown, rotation, and retry behavior | ☑ |
 | Reproducibility | Same inputs produce equivalent conclusions and evidence | ☐ |
 | Operations | Health checks, request IDs, persisted failures, and usable metrics | ☐ |
 
@@ -215,6 +221,7 @@ when possible.
 | 2026-11-05 | pending | Full ten-case strict gates | Failed | 8 cases scored; c05 nested IRDAI items and c06 top-level IRDAI list; 0 Groq 429s |
 | 2026-11-05 | pending | Full ten-case strict gates | Failed | 10 cases scored; verdict accuracy 1.0; unsupported-claim rate 0.3; 0 failures and 0 Groq 429s |
 | 2026-11-05 | pending | Full ten-case strict gates | Failed | 10 cases scored; verdict accuracy 1.0; unsupported-claim rate 0.2; 0 failures and 0 Groq 429s; two unsupported medical assertions |
+| 2026-11-05 | `5e6513f` | Full ten-case strict gates | Passed | 10 cases scored; extraction/verdict/letter facts 1.0; unsupported claims 0.0; failed cases 0; 1 Groq 429; mean Judge score 0.687 |
 
 ## Operational commands
 
