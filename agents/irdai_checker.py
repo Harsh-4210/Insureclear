@@ -183,35 +183,33 @@ Return a JSON object:
 }}
 """
 
-    raw_result = call_llm_json(
-        prompt,
-        system_prompt=SYSTEM_PROMPT,
-        max_output_tokens=1536,
-    )
     result = None
-    correction_prompt = prompt
     last_error = None
     for correction_attempt in range(3):
         try:
+            request_prompt = prompt
+            output_budget = 1536
+            if correction_attempt:
+                request_prompt = (
+                    "Using the case context below, return only a minimal valid JSON "
+                    "object. Use empty arrays unless an item is directly supported. "
+                    "Each list may contain at most one object; keep every string under "
+                    "20 words. Do not invent citations, IDs, URLs, or precedents. "
+                    "Do not return a list at the top level or strings inside object lists. "
+                    f"Previous validation error: {last_error}\n\n{prompt}"
+                )
+                output_budget = 1024
+            raw_result = call_llm_json(
+                request_prompt,
+                system_prompt=SYSTEM_PROMPT,
+                max_output_tokens=output_budget,
+            )
             result = validate_agent_output("IRDAI Checker", raw_result)
             break
         except (AgentOutputError, ValueError) as error:
             last_error = error
             if correction_attempt == 2:
                 raise
-            correction_prompt = (
-                "Return exactly one compact JSON object matching the required schema. "
-                "Every item in applicable_regulations, potential_insurer_violations, "
-                "relevant_precedents, and key_legal_points_for_appeal must be an object, "
-                "never a string. Keep each list to at most two items and use empty arrays "
-                "when no supported item exists. Do not include markdown or commentary. "
-                f"The previous response failed validation: {error}.\n\n{prompt}"
-            )
-            raw_result = call_llm_json(
-                correction_prompt,
-                system_prompt=SYSTEM_PROMPT,
-                max_output_tokens=2048,
-            )
     if result is None:
         raise AgentOutputError(f"IRDAI Checker returned no validated result: {last_error}")
     result = _apply_citation_review_metadata(result)
