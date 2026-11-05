@@ -84,7 +84,21 @@ Return a JSON object:
 Score honestly. An overall score above 0.75 = APPROVE. Below 0.75 = REVISE.
 """
 
-    result = call_llm_json(prompt, system_prompt=SYSTEM_PROMPT)
+    try:
+        result = call_llm_json(
+            prompt,
+            system_prompt=SYSTEM_PROMPT,
+            max_output_tokens=2048,
+        )
+    except ValueError as error:
+        result = call_llm_json(
+            f"{prompt}\n\nThe previous response was invalid JSON: {error}. "
+            "Return one complete compact JSON object only. Do not truncate any "
+            "field and do not include markdown or commentary.",
+            system_prompt=SYSTEM_PROMPT,
+            max_retries=1,
+            max_output_tokens=2048,
+        )
     save_checkpoint(case_id, "judge", result)
     print("[Judge] ✓ Done")
     return result

@@ -90,3 +90,21 @@ def test_groq_retry_wait_uses_body_duration():
         '{"message":"Please try again in 45ms"}',
     )
     assert 0.1 <= wait <= 0.2
+
+
+def test_groq_json_budget_is_included_in_request(monkeypatch):
+    monkeypatch.setattr(llm_client, "PROVIDER", "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.delenv("GROQ_API_KEYS", raising=False)
+    responses = [FakeResponse(200, {
+        "choices": [{"message": {"content": '{"ok": true}'}}],
+        "usage": {"total_tokens": 1},
+    })]
+    sent = []
+    monkeypatch.setattr(
+        httpx,
+        "post",
+        lambda url, json, headers, timeout: sent.append(json) or responses.pop(0),
+    )
+    assert llm_client.call_llm_json("Return ok", max_output_tokens=1024) == {"ok": True}
+    assert sent[0]["max_completion_tokens"] == 1024 + llm_client.GROQ_REASONING_TOKEN_BUDGET

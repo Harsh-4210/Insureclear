@@ -121,6 +121,8 @@ $env:LLM_PROVIDER="groq"
   unsupported facts, and unverified case law.
 - [x] Preserve the evidence set during evidence correction.
 - [x] Bound evidence correction attempts.
+- [x] Give the Judge a larger structured-output budget and one bounded retry
+  when its JSON response is malformed or truncated.
 - [ ] Pass the complete evidence map to the Judge.
 - [ ] Replace free-form issue handling with structured issue types:
   - `unsupported_fact`
@@ -197,6 +199,7 @@ when possible.
 | 2026-11-01 | `5f4ec82` | Automated tests | Passed | 28 tests passed |
 | 2026-11-02 | pending | Full ten-case strict gates | Failed | 9 cases scored; verdict accuracy 0.889; unsupported claim rate 0.222; c10 IRDAI top-level list failure |
 | 2026-11-02 | pending | Full ten-case strict gates | Failed | 8 cases scored; verdict accuracy 1.0; unsupported claim rate 0.0; c06/c09 exhausted Groq TPM retries |
+| 2026-11-05 | pending | Full ten-case strict gates | Failed | 6 cases failed on malformed Judge JSON; 4 scored cases had 0.0 unsupported claims; 0 Groq 429s |
 
 ## Operational commands
 
