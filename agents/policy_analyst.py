@@ -75,7 +75,11 @@ Return a JSON object:
 }}
 """
 
-    result = call_llm_json(prompt, system_prompt=SYSTEM_PROMPT)
+    result = call_llm_json(
+        prompt,
+        system_prompt=SYSTEM_PROMPT,
+        max_output_tokens=1536,
+    )
     save_checkpoint(case_id, "policy_analyst", result)
     print("[Policy Analyst] ✓ Done")
     return result

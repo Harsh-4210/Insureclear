@@ -113,6 +113,8 @@ $env:LLM_PROVIDER="groq"
   4. Explicit uncertainty when evidence is unavailable.
 - [ ] Require every regulatory claim in a final letter to have a source/version
   reference.
+- [x] Do not treat generated IRDAI analysis as an authoritative evidence source
+  when no external regulatory source was supplied.
 - [ ] Add tests proving that the same input selects the same governing rule.
 
 ### Phase 4 — Judge and revision-loop hardening
@@ -148,6 +150,8 @@ $env:LLM_PROVIDER="groq"
   `GROQ_REASONING_TOKEN_BUDGET`.
 - [x] Cap Groq completion output with `GROQ_MAX_OUTPUT_TOKENS` and use a
   lower JSON budget for structured agent responses.
+- [x] Give the IRDAI Checker and Policy Analyst sufficient structured-output
+  budget while keeping the global Groq cap constrained.
 - [x] Fall back from native JSON mode only for JSON validation failures.
 - [ ] Run the full suite and confirm retry metrics distinguish:
   - First-attempt 429s.
@@ -200,6 +204,7 @@ when possible.
 | 2026-11-02 | pending | Full ten-case strict gates | Failed | 9 cases scored; verdict accuracy 0.889; unsupported claim rate 0.222; c10 IRDAI top-level list failure |
 | 2026-11-02 | pending | Full ten-case strict gates | Failed | 8 cases scored; verdict accuracy 1.0; unsupported claim rate 0.0; c06/c09 exhausted Groq TPM retries |
 | 2026-11-05 | pending | Full ten-case strict gates | Failed | 6 cases failed on malformed Judge JSON; 4 scored cases had 0.0 unsupported claims; 0 Groq 429s |
+| 2026-11-05 | pending | Full ten-case strict gates | Failed | 9 cases scored; c07 IRDAI output malformed; c09 missing verdict field; c04 unverified regulatory ID counted as evidence |
 
 ## Operational commands
 

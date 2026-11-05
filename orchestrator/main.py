@@ -232,7 +232,7 @@ def run_pipeline(
         {
             "denial": denial_text,
             "policy": policy_text,
-            "regulatory": regulatory_text or json.dumps(irdai_result),
+            "regulatory": regulatory_text,
         },
     )
     for evidence_attempt in range(2):
@@ -263,7 +263,7 @@ def run_pipeline(
             {
                 "denial": denial_text,
                 "policy": policy_text,
-                "regulatory": regulatory_text or json.dumps(irdai_result),
+                "regulatory": regulatory_text,
             },
         )
         if corrected_validation.valid:
