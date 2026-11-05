@@ -18,7 +18,7 @@ from tools.pdf_reader import extract_text_from_pdf
 from tools.io_utils import create_output_dir, save_final_output
 from tools.llm_client import get_stats
 from tools.agent_validation import validate_agent_output
-from tools.evidence_validator import validate_appeal_letter
+from tools.evidence_validator import sanitize_unsupported_references, validate_appeal_letter
 from agents import auditor, policy_analyst, irdai_checker, appeal_writer, judge
 
 
@@ -272,6 +272,20 @@ def run_pipeline(
             print("\n  Evidence correction: passed")
         letter = corrected_letter
         evidence_validation = corrected_validation
+    if not evidence_validation.valid:
+        sanitized_letter = sanitize_unsupported_references(letter, evidence_validation)
+        sanitized_validation = validate_appeal_letter(
+            sanitized_letter,
+            {
+                "denial": denial_text,
+                "policy": policy_text,
+                "regulatory": regulatory_text,
+            },
+        )
+        if sanitized_validation.valid:
+            letter = sanitized_letter
+            evidence_validation = sanitized_validation
+            print("\n  Evidence sanitization: passed")
     if not evidence_validation.valid:
         print(
             f"\n  Evidence validation: {len(evidence_validation.issues)} "

@@ -84,6 +84,15 @@ def _normalise(value: str) -> str:
 def _present(value: str, source: str) -> bool:
     if _normalise(value) in _normalise(source):
         return True
+    identifier = re.search(
+        r"(?:(?:policy|claim|case|member|certificate|customer|UHID|reference|ref(?:erence)?)"
+        r"\s*(?:number|no\.?|#|id)?\s*[:\-]?\s*)"
+        r"([A-Z0-9][A-Z0-9/_-]{3,})",
+        value,
+        re.I,
+    )
+    if identifier and _normalise(identifier.group(1)) in _normalise(source):
+        return True
     clause_number = re.fullmatch(
         r"(?:clause|section|regulation|rule|article|paragraph|para|exclusion)"
         r"\s*(?:no\.?|number)?\s*([a-z]?\d+(?:\.\d+)*(?:\([a-z0-9]+\))?)",
@@ -102,6 +111,22 @@ def _present(value: str, source: str) -> bool:
         source_digits = {re.sub(r"\D", "", match) for match in re.findall(r"\d[\d,]*(?:\.\d+)?", source)}
         return value_digits in source_digits
     return False
+
+
+def sanitize_unsupported_references(
+    letter: str, validation: EvidenceValidation
+) -> str:
+    """Remove unsupported concrete references before a letter can be emitted."""
+    sanitized = letter
+    replacements = {
+        "unsupported_id": "the cited reference",
+        "unsupported_clause": "the applicable policy provision",
+    }
+    for issue in validation.issues:
+        replacement = replacements.get(issue.category)
+        if replacement and issue.value:
+            sanitized = sanitized.replace(issue.value, replacement)
+    return sanitized
 
 
 def _add_missing(issues: list[EvidenceIssue], category: str, values, source: str):

@@ -1,4 +1,4 @@
-from tools.evidence_validator import validate_appeal_letter
+from tools.evidence_validator import sanitize_unsupported_references, validate_appeal_letter
 
 
 def test_accepts_claims_present_in_sources():
@@ -63,3 +63,21 @@ def test_accepts_section_prefix_when_number_is_in_policy():
         {"policy": "1.2 Day Care Procedures are covered."},
     )
     assert result.valid
+
+
+def test_matches_labeled_identifier_against_source_identifier():
+    result = validate_appeal_letter(
+        "Claim NGI/HC/2025/42277 and Policy NGI7720461893.",
+        {"denial": "Claim No: NGI/HC/2025/42277\nPolicy No: NGI7720461893"},
+    )
+    assert result.valid
+
+
+def test_sanitizes_unsupported_references():
+    result = validate_appeal_letter(
+        "Use Clause 3.6 and Circular IRDAI/HLT/CIR/541/2022.",
+        {"policy": "Clause 3.1 applies."},
+    )
+    sanitized = sanitize_unsupported_references("Use Clause 3.6 and Circular IRDAI/HLT/CIR/541/2022.", result)
+    assert "Clause 3.6" not in sanitized
+    assert "IRDAI/HLT/CIR/541/2022" not in sanitized
