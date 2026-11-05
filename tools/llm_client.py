@@ -19,7 +19,8 @@ load_dotenv()
 PROVIDER = os.getenv("LLM_PROVIDER", "gemini").lower()
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_REASONING_EFFORT = os.getenv("GROQ_REASONING_EFFORT", "medium")
-GROQ_REASONING_TOKEN_BUDGET = int(os.getenv("GROQ_REASONING_TOKEN_BUDGET", "2048"))
+GROQ_REASONING_TOKEN_BUDGET = int(os.getenv("GROQ_REASONING_TOKEN_BUDGET", "512"))
+GROQ_MAX_OUTPUT_TOKENS = int(os.getenv("GROQ_MAX_OUTPUT_TOKENS", "2048"))
 
 _client_initialised = False
 _total_calls = 0
@@ -128,6 +129,7 @@ def _call_groq(
     """
     global _total_calls, _total_time, _total_tokens, _total_retries, _total_429s
 
+    max_output_tokens = min(max_output_tokens, GROQ_MAX_OUTPUT_TOKENS)
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
@@ -303,7 +305,7 @@ def call_llm_json(
     prompt: str,
     system_prompt: str = "",
     max_retries: int = 3,
-    max_output_tokens: int = 2048,
+    max_output_tokens: int = 1024,
 ) -> dict:
     """
     Call LLM and parse JSON response.

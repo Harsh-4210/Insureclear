@@ -144,6 +144,8 @@ $env:LLM_PROVIDER="groq"
 - [x] Rotate immediately after a 429 and honor body-level Groq retry durations.
 - [x] Bound the Groq reasoning-token budget with
   `GROQ_REASONING_TOKEN_BUDGET`.
+- [x] Cap Groq completion output with `GROQ_MAX_OUTPUT_TOKENS` and use a
+  lower JSON budget for structured agent responses.
 - [x] Fall back from native JSON mode only for JSON validation failures.
 - [ ] Run the full suite and confirm retry metrics distinguish:
   - First-attempt 429s.

@@ -186,7 +186,7 @@ Return a JSON object:
     raw_result = call_llm_json(
         prompt,
         system_prompt=SYSTEM_PROMPT,
-        max_output_tokens=2048,
+        max_output_tokens=1024,
     )
     result = None
     correction_prompt = prompt
@@ -207,7 +207,7 @@ Return a JSON object:
             raw_result = call_llm_json(
                 correction_prompt,
                 system_prompt=SYSTEM_PROMPT,
-                max_output_tokens=2048,
+                max_output_tokens=1024,
             )
     if result is None:
         raise AgentOutputError("IRDAI Checker returned no validated result")
