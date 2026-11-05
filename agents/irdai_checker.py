@@ -190,27 +190,30 @@ Return a JSON object:
     )
     result = None
     correction_prompt = prompt
-    for correction_attempt in range(2):
+    last_error = None
+    for correction_attempt in range(3):
         try:
             result = validate_agent_output("IRDAI Checker", raw_result)
             break
-        except AgentOutputError as error:
-            if correction_attempt == 1:
+        except (AgentOutputError, ValueError) as error:
+            last_error = error
+            if correction_attempt == 2:
                 raise
             correction_prompt = (
-                f"{prompt}\n\n"
-                "The previous response had an invalid top-level shape: "
-                f"{error}. Return exactly one JSON object matching the schema above, "
-                "not a JSON array, string, or scalar. Do not return a list of violations "
-                "as the top-level response."
+                "Return exactly one compact JSON object matching the required schema. "
+                "Every item in applicable_regulations, potential_insurer_violations, "
+                "relevant_precedents, and key_legal_points_for_appeal must be an object, "
+                "never a string. Keep each list to at most two items and use empty arrays "
+                "when no supported item exists. Do not include markdown or commentary. "
+                f"The previous response failed validation: {error}.\n\n{prompt}"
             )
             raw_result = call_llm_json(
                 correction_prompt,
                 system_prompt=SYSTEM_PROMPT,
-                max_output_tokens=1536,
+                max_output_tokens=2048,
             )
     if result is None:
-        raise AgentOutputError("IRDAI Checker returned no validated result")
+        raise AgentOutputError(f"IRDAI Checker returned no validated result: {last_error}")
     result = _apply_citation_review_metadata(result)
     result = _apply_valid_denial_guardrail(result, policy_analyst_output)
     save_checkpoint(case_id, "irdai_checker", result)

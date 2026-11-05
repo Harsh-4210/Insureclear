@@ -152,6 +152,8 @@ $env:LLM_PROVIDER="groq"
   lower JSON budget for structured agent responses.
 - [x] Give the IRDAI Checker and Policy Analyst sufficient structured-output
   budget while keeping the global Groq cap constrained.
+- [x] Retry malformed IRDAI nested structures with a compact schema prompt and
+  a bounded three-attempt limit.
 - [x] Fall back from native JSON mode only for JSON validation failures.
 - [ ] Run the full suite and confirm retry metrics distinguish:
   - First-attempt 429s.
@@ -205,6 +207,7 @@ when possible.
 | 2026-11-02 | pending | Full ten-case strict gates | Failed | 8 cases scored; verdict accuracy 1.0; unsupported claim rate 0.0; c06/c09 exhausted Groq TPM retries |
 | 2026-11-05 | pending | Full ten-case strict gates | Failed | 6 cases failed on malformed Judge JSON; 4 scored cases had 0.0 unsupported claims; 0 Groq 429s |
 | 2026-11-05 | pending | Full ten-case strict gates | Failed | 9 cases scored; c07 IRDAI output malformed; c09 missing verdict field; c04 unverified regulatory ID counted as evidence |
+| 2026-11-05 | pending | Full ten-case strict gates | Failed | 8 cases scored; c05 nested IRDAI items and c06 top-level IRDAI list; 0 Groq 429s |
 
 ## Operational commands
 
