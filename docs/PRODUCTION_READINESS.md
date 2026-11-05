@@ -86,6 +86,8 @@ $env:LLM_PROVIDER="groq"
 - [x] Match labeled identifiers against canonical source identifiers.
 - [x] Neutralize unsupported IDs and clauses before emitting a final letter if
   bounded LLM correction does not remove them.
+- [x] Neutralize unsupported medical assertions and invented case-law references
+  during final deterministic sanitization.
 - [x] Accept equivalent policy section references such as `1.2` and
   `Section 1.2` when the source contains the same section number.
 - [ ] Add canonical fact comparison against the Auditor output for every
@@ -212,6 +214,7 @@ when possible.
 | 2026-11-05 | pending | Full ten-case strict gates | Failed | 9 cases scored; c07 IRDAI output malformed; c09 missing verdict field; c04 unverified regulatory ID counted as evidence |
 | 2026-11-05 | pending | Full ten-case strict gates | Failed | 8 cases scored; c05 nested IRDAI items and c06 top-level IRDAI list; 0 Groq 429s |
 | 2026-11-05 | pending | Full ten-case strict gates | Failed | 10 cases scored; verdict accuracy 1.0; unsupported-claim rate 0.3; 0 failures and 0 Groq 429s |
+| 2026-11-05 | pending | Full ten-case strict gates | Failed | 10 cases scored; verdict accuracy 1.0; unsupported-claim rate 0.2; 0 failures and 0 Groq 429s; two unsupported medical assertions |
 
 ## Operational commands
 

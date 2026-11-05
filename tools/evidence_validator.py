@@ -121,6 +121,10 @@ def sanitize_unsupported_references(
     replacements = {
         "unsupported_id": "the cited reference",
         "unsupported_clause": "the applicable policy provision",
+        "unsupported_medical_claim": (
+            "The supplied documents do not establish this medical assertion"
+        ),
+        "invented_case_law": "the cited legal authority",
     }
     for issue in validation.issues:
         replacement = replacements.get(issue.category)

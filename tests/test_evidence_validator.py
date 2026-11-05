@@ -81,3 +81,10 @@ def test_sanitizes_unsupported_references():
     sanitized = sanitize_unsupported_references("Use Clause 3.6 and Circular IRDAI/HLT/CIR/541/2022.", result)
     assert "Clause 3.6" not in sanitized
     assert "IRDAI/HLT/CIR/541/2022" not in sanitized
+
+
+def test_sanitizes_unsupported_medical_claims():
+    letter = "The treatment was medically necessary and clinically indicated."
+    result = validate_appeal_letter(letter, {"denial": "Treatment was denied."})
+    sanitized = sanitize_unsupported_references(letter, result)
+    assert validate_appeal_letter(sanitized, {"denial": "Treatment was denied."}).valid
