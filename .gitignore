@@ -17,3 +17,7 @@ logs/*.log
 outputs/
 web/frontend/node_modules/
 web/frontend/dist/
+
+# Agent scratch and private pilot identity/review databases
+.superpowers/
+data/*.sqlite3*
