@@ -162,9 +162,10 @@ Serve private-pilot claimant users and trained reviewers. A completed model job 
 ### T09: Corpus audit and expert checklist (controller)
 **Files:** new `tools/audit_regulatory_registry.py`, `tests/test_registry_audit.py`, `docs/REGULATORY_REVIEW_CHECKLIST.md`; regulatory docs.
 **Interfaces:** `audit_registry(registry)->dict` emits source integrity/counts, missing effective ranges/date basis/supersession and explicit legal-review needs. CLI metadata only, nonzero for corrupt corpus. Checklist records named reviewer/date/source/version/decision/evidence; never invent sign-off.
-- [ ] RED default three-source/nine-excerpt audit, unknown-date preservation and tampered-byte rejection tests.
-- [ ] Implement audit/checklist; GREEN tests/default audit; commit `feat: audit regulatory coverage and review requirements`.
+- [x] RED default three-source/nine-excerpt audit, unknown-date preservation and tampered-byte rejection tests.
+- [x] Implement audit/checklist; GREEN tests/default audit; commit `feat: audit regulatory coverage and review requirements`.
 - [ ] Qualified legal reviewer signs governing dates/versions/applicability/conflicts. Leave unchecked without actual sign-off; coding agents cannot complete this obligation.
+
 
 ### T10: CI and honest evaluation (controller)
 **Files:** `.github/workflows/ci.yml`, eval harness/tests, readiness docs, new `docs/PILOT_ACCEPTANCE.md`.
@@ -215,7 +216,7 @@ Serve private-pilot claimant users and trained reviewers. A completed model job 
 | T06 | complete locally | version/source-bound API; approval race regression fixed |
 | T07 | in progress | frontend module agent |
 | T08 | complete locally | 245 passed/1 Windows symlink skip; PDF bounds added; deployment checks remain open |
-| T09 | pending | audit code; legal sign-off external |
+| T09 | audit code complete | 28 focused tests; 3 pinned sources/9 excerpts; legal sign-off unchecked |
 | T10 | pending | offline CI; live/representative acceptance separate |
 | T11 | pending | independent review/build/performance |
 | T12 | external gate | operator/legal/environment decisions and deployment permission |

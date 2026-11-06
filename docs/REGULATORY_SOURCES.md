@@ -69,3 +69,22 @@ current corpus has no curated case-law orders, no complete rule engine, and no
 automatic legal approval. Consult the official IRDAI and CIO publications when
 expanding the corpus. See the approved design and implementation ledger in
 `docs/superpowers/` for scope and verification evidence.
+
+## Metadata audit and qualified review
+
+Run `python -B tools/audit_regulatory_registry.py` from the repository root for a
+fresh, read-only integrity/coverage audit of the pinned corpus. It emits metadata
+JSON, counts catalogued sources separately from curated excerpts, preserves
+unknown effective bounds/date bases/supersession, and always requires human
+applicability review. Exit 0 verifies loader-time integrity only; corrupt, missing
+or empty corpora return nonzero. `--registry PATH` inspects a candidate without
+activating it. The callable `audit_registry(registry)` inspects an already loaded
+snapshot and does not reread artifact files or verify PDF digital signatures.
+
+Use [REGULATORY_REVIEW_CHECKLIST.md](REGULATORY_REVIEW_CHECKLIST.md) to record the
+qualified reviewer's identity/date, governing source/version, effective-date and
+date-basis evidence, supersession, conflicts, decision and reasons. No legal
+acceptance has been recorded by the implementation. Unknown dates and absent
+supersession metadata remain unresolved; publication dates are not effective-date
+substitutes. Zero curated excerpts for a catalogued source is a coverage gap,
+not evidence that the source is irrelevant.
