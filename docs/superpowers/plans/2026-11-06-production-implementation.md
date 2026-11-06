@@ -113,9 +113,9 @@ Serve private-pilot claimant users and trained reviewers. A completed model job 
 ### T03: Invite-only identity/session modules (independent module agent)
 **Exclusive files:** create `tools/auth_store.py`, `web/auth.py`, `tools/manage_users.py`, `tests/test_auth_store.py`, `tests/test_auth_api.py`. Do not edit integration files.
 **Interfaces:** `AuthStore(db_path)`; `create_user(username,password,org_id,role)->dict`; `login(username,password)->(public_user,raw_session,csrf)`; `session(raw_token)->dict|None` including public fields/csrf; `logout(raw_token)`; `set_password(user_id,password)`; `disable_user(user_id)`. `web.auth.router` mounts auth routes, `current_principal(request:Request)->dict` authenticates and `require_mutation(request,principal)` checks CSRF/Origin. Resolve configured store lazily from `INSURECLEAR_AUTH_DB`; tests inject temporary store. Principal: `user_id,org_id,role,csrf_token`. Legacy mode is controller-owned.
-- [ ] RED tests: login/generic failures, salted nonplaintext passwords, expiry/logout/reset/disable revocation, persisted throttle, Secure/HttpOnly cookie, exact Origin and CSRF refusal.
-- [ ] Implement Design contract parameters; bound login body/throttle before hashing; CLI hidden password, explicit role/org. Document development HTTP override. Do not create real accounts or passwords.
-- [ ] GREEN focused tests; report limits/paths/results; commit owned files `feat: add invite-only account sessions`.
+- [x] RED tests: login/generic failures, salted nonplaintext passwords, expiry/logout/reset/disable revocation, persisted throttle, Secure/HttpOnly cookie, exact Origin and CSRF refusal.
+- [x] Implement Design contract parameters; bound login body/throttle before hashing; CLI hidden password, explicit role/org. Document development HTTP override. Do not create real accounts or passwords.
+- [x] GREEN focused tests; report limits/paths/results; commit owned files `feat: add invite-only account sessions`.
 
 ### T04: Ownership on every case route (controller; T03)
 **Files:** `tools/job_store.py`, `web/api.py`, API tests, new `tests/test_case_access.py`.
@@ -129,9 +129,9 @@ Serve private-pilot claimant users and trained reviewers. A completed model job 
 ### T05: Immutable review persistence (independent module agent)
 **Exclusive files:** create `tools/review_store.py`, `tests/test_review_store.py` only.
 **Interfaces:** `ReviewStore(db_path)`; `initialize(job_id,org_id,letter,source_fingerprint)->dict`; `get(job_id)->dict|None`; `edit(job_id,actor_id,expected_version,letter,note)->dict`; `decide(job_id,actor_id,expected_version,decision,note,checks)->dict`; `delete(job_id)`. `ReviewConflict` signals stale version/source or deleted tombstone. Every initialization/edit/decision checks a durable content-free deletion tombstone inside the same SQLite write transaction; delete writes the tombstone before purging versions/events, preventing recreation by a previously authorized request. T08 fences job claiming with a transactional deleting/cancelled status before filesystem cleanup. `ReviewConflict` signals stale version. Current state includes `version,letter,letter_sha256,status,source_fingerprint,history`; immutable versions/events contain UTC actor/time/reason/hash/source. Transactions serialize writers. API controller supplies authorization/evidence validation; store also checks decision enum/approval confirmations.
-- [ ] RED tests: initial unapproved draft, stale concurrent editors AND decisions, deletion racing initialization, mismatched repeated initialization, approval bound to exact version/hash, edit invalidates approval, append-only history, source-fingerprint mismatch and isolated safe deletion.
-- [ ] Implement parameterized SQLite persistence without mutating original generated reports/logging patient text. No real data deletion.
-- [ ] GREEN focused tests; report contract/results; commit owned files `feat: persist versioned human review decisions`.
+- [x] RED tests: initial unapproved draft, stale concurrent editors AND decisions, deletion racing initialization, mismatched repeated initialization, approval bound to exact version/hash, edit invalidates approval, append-only history, source-fingerprint mismatch and isolated safe deletion.
+- [x] Implement parameterized SQLite persistence without mutating original generated reports/logging patient text. No real data deletion.
+- [x] GREEN focused tests; report contract/results; commit owned files `feat: persist versioned human review decisions`.
 
 ### T06: Review API and approved export (controller; T01,T04,T05)
 **Files:** new `web/reviews.py`, `tests/test_review_api.py`; integrate API.
@@ -209,8 +209,10 @@ Serve private-pilot claimant users and trained reviewers. A completed model job 
 |---|---|---|
 | T00 | complete | 120 tests; baseline caed8d4; builder findings resolved; plan commit in Git history |
 | T01–T02 | complete locally | 129 pipeline/evidence tests passed; semantic/live acceptance remains T10 |
-| T03–T04 | pending | accounts/ownership |
-| T05–T07 | pending | review store/API/frontend |
+| T03 | complete module | 27 identity tests; API integration T04 pending |
+| T04 | in progress | ownership regressions RED |
+| T05 | complete module | 30 review transaction tests |
+| T06–T07 | pending | review API/frontend |
 | T08 | pending | private lifecycle/operations |
 | T09 | pending | audit code; legal sign-off external |
 | T10 | pending | offline CI; live/representative acceptance separate |
