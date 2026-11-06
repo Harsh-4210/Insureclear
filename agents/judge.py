@@ -5,7 +5,9 @@ Catches weak arguments, missing citations, and hallucinated facts.
 Outputs a scorecard and a final APPROVE/REVISE recommendation.
 """
 
-from tools.llm_client import call_llm_json
+import hashlib
+from tools.document_context import ensure_prompt_budget
+from tools.llm_client import call_llm_json, dispatch_padding
 from tools.io_utils import save_checkpoint, load_checkpoint
 
 SYSTEM_PROMPT = """
@@ -31,10 +33,6 @@ def run(
     Score and validate the appeal letter.
     Returns a scorecard dict with recommendation.
     """
-    cached = load_checkpoint(case_id, "judge")
-    if cached:
-        return cached
-
     print("\n[Judge] Reviewing and scoring appeal letter...")
 
     prompt = f"""
@@ -49,8 +47,17 @@ Review this insurance appeal letter against the source facts.
 - Claim Number: {auditor_output.get('claim_number')}
 - Denial reason: {auditor_output.get('denial_reason_verbatim')}
 - Clause cited: {auditor_output.get('policy_clause_cited')}
-- IRDAI legal points available: {irdai_output.get('key_legal_points_for_appeal')}
-- Estimated success probability: {irdai_output.get('appeal_pathway', {}).get('estimated_success_probability')}
+- Policyholder: {auditor_output.get('policyholder_name')}
+- Claim amount: {auditor_output.get('claim_amount')}
+- Hospital: {auditor_output.get('hospital_name')}
+- Treatment: {auditor_output.get('treatment_or_procedure')}
+- Denial date: {auditor_output.get('denial_date')}
+No generated legal research or estimated success probability is a verified fact.
+
+=== PINNED REGULATORY SOURCE EVIDENCE ===
+{irdai_output.get("verified_source_context", "No pinned source excerpts supplied.")}
+Source provenance does not establish legal applicability. Verify interpretations
+against these exact excerpts; do not treat generated research leads as evidence.
 
 Score the appeal letter on these dimensions (0.0 to 1.0):
 
@@ -84,21 +91,27 @@ Return a JSON object:
 Score honestly. An overall score above 0.75 = APPROVE. Below 0.75 = REVISE.
 """
 
+    ensure_prompt_budget(prompt, SYSTEM_PROMPT, 2048 + dispatch_padding(True))
+    reviewed_hash = hashlib.sha256((appeal_letter + prompt).encode()).hexdigest()
+    cached = load_checkpoint(case_id, "judge")
+    if cached and cached.get("reviewed_context_sha256") == reviewed_hash:
+        return cached
     try:
         result = call_llm_json(
             prompt,
             system_prompt=SYSTEM_PROMPT,
             max_output_tokens=2048,
         )
-    except ValueError as error:
+    except ValueError:
+        retry_prompt = prompt + "\nReturn one complete compact JSON object only. The previous response was not valid JSON; omit commentary."
+        ensure_prompt_budget(retry_prompt, SYSTEM_PROMPT, 2048 + dispatch_padding(True))
         result = call_llm_json(
-            f"{prompt}\n\nThe previous response was invalid JSON: {error}. "
-            "Return one complete compact JSON object only. Do not truncate any "
-            "field and do not include markdown or commentary.",
+            retry_prompt,
             system_prompt=SYSTEM_PROMPT,
             max_retries=1,
             max_output_tokens=2048,
         )
+    result["reviewed_context_sha256"] = reviewed_hash
     save_checkpoint(case_id, "judge", result)
     print("[Judge] ✓ Done")
     return result

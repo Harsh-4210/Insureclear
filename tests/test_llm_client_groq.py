@@ -1,3 +1,5 @@
+import pytest
+
 import httpx
 
 from tools import llm_client
@@ -108,3 +110,18 @@ def test_groq_json_budget_is_included_in_request(monkeypatch):
     )
     assert llm_client.call_llm_json("Return ok", max_output_tokens=1024) == {"ok": True}
     assert sent[0]["max_completion_tokens"] == 1024 + llm_client.GROQ_REASONING_TOKEN_BUDGET
+
+
+def test_groq_selects_the_key_whose_cooldown_ends_first(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEYS", "first-key,second-key")
+    monkeypatch.setattr(llm_client, "_groq_key_index", 0)
+    monkeypatch.setattr(llm_client, "_groq_key_cooldowns", {"first-key": 160, "second-key": 110})
+    monkeypatch.setattr(llm_client.time, "time", lambda: 100)
+    key, wait = llm_client._select_groq_key()
+    assert key == "second-key"
+    assert wait == 10
+
+
+@pytest.mark.parametrize("unit", ["ms", "millisecond", "milliseconds"])
+def test_groq_retry_duration_recognizes_millisecond_spellings(unit):
+    assert llm_client._groq_retry_wait({}, 1, f"Please try again in 45 {unit}") == pytest.approx(0.145)

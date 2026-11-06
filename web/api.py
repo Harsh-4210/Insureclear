@@ -195,13 +195,20 @@ def _run_job(job_id: str, payload: dict[str, Any]) -> None:
 
 
 def _worker_loop() -> None:
+    # Only the lock owner may recover jobs or run the queue. Keep ownership
+    # until the thread exits, even if API shutdown stops waiting after 2s.
     while not _worker_stop.is_set():
-        claimed = job_store.claim_next()
-        if claimed:
-            job_id, payload = claimed
-            _run_job(job_id, payload)
-        else:
-            _worker_stop.wait(0.5)
+        with job_store.worker_lock() as acquired:
+            if acquired:
+                job_store.recover_running()
+                while not _worker_stop.is_set():
+                    claimed = job_store.claim_next()
+                    if claimed:
+                        job_id, payload = claimed
+                        _run_job(job_id, payload)
+                    else:
+                        _worker_stop.wait(0.5)
+        _worker_stop.wait(0.5)
 
 
 def _start_worker() -> None:

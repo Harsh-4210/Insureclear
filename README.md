@@ -207,6 +207,31 @@ Generated regulatory entries are marked `manual_verification_required` unless
 an exact official document has been checked. See
 [docs/REGULATORY_SOURCES.md](docs/REGULATORY_SOURCES.md).
 
+### Document coverage and source provenance
+
+Agent prompts use bounded, deterministic source retrieval. Short sources are
+included completely when they fit; longer documents include selected, located
+excerpts and explicit omission metadata. The full input text remains available
+for evidence checks. A high model score cannot override incomplete coverage.
+
+The local registry pins three official regulatory artifacts; nine health-circular
+excerpts are currently curated for runtime use. Writer, Judge and final validator
+share the selected primary evidence. Source provenance does not establish legal
+applicability: these cases return `REVIEW_REQUIRED` when otherwise approved.
+Failed final evidence checks return `VALIDATION_ERROR`. All three interfaces use
+the same pipeline, including Streamlit.
+
+- [Source registry and maintenance](docs/REGULATORY_SOURCES.md)
+- [Live regression baseline](docs/LIVE_REGRESSION_2026-11-05.md)
+- [Pilot-to-growth scaling roadmap](docs/SCALING_ROADMAP.md)
+
+Context settings in `.env.example` use a conservative UTF-8 byte upper bound,
+not an exact model tokenizer: `INSURECLEAR_PROMPT_BUDGET` (16,000),
+`INSURECLEAR_CHUNK_UNITS` (1,200), `INSURECLEAR_CHUNK_OVERLAP` (120), and
+`INSURECLEAR_REGULATORY_BUDGET` (3,500). Actual provider dispatch also reserves
+output, JSON instructions and Groq reasoning tokens; oversized requests fail
+explicitly rather than bypassing the bound.
+
 ### Privacy boundary
 
 - API access can require `X-API-Key` authentication.
@@ -223,7 +248,7 @@ an exact official document has been checked. See
 ### Requirements
 
 - Python 3.10+
-- Gemini API key
+- A Gemini or Groq API key; select the provider with `LLM_PROVIDER`
 - Node.js and npm for the React UI
 - Tesseract and Poppler for scanned PDFs outside Docker
 
@@ -247,7 +272,9 @@ copy .env.example .env     # Windows
 # cp .env.example .env     # macOS/Linux
 ```
 
-Set `GEMINI_API_KEY` in `.env`. The current default model is
+For Gemini, set `GEMINI_API_KEY` in `.env`. For Groq, set `LLM_PROVIDER=groq`
+and `GROQ_API_KEY` (or a key pool). Provider credentials stay server-side.
+The current default Gemini model in this project is
 `gemini-3.6-flash`; override it with `GEMINI_MODEL` when needed.
 
 ### Input modes

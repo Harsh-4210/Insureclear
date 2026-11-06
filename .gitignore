@@ -10,6 +10,7 @@ data/input/*.pdf
 data/input/*.txt
 data/output/
 data/jobs.sqlite3
+data/*.sqlite3.worker.lock
 data/job_inputs/
 logs/*.log
 .DS_Store

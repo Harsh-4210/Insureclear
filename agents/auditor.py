@@ -5,7 +5,9 @@ Extracts structured information: what was denied, why, and what the policy says.
 This is the foundation every other agent builds on.
 """
 
-from tools.llm_client import call_llm_json
+import hashlib
+from tools.document_context import fit_document_prompt, source_marker, retrieval_fingerprint
+from tools.llm_client import call_llm_json, dispatch_padding
 from tools.io_utils import save_checkpoint, load_checkpoint
 
 SYSTEM_PROMPT = """
@@ -23,20 +25,16 @@ def run(denial_text: str, policy_text: str, case_id: str) -> dict:
     Returns a structured dict with all extracted fields.
     Checkpoints result — won't re-run if already done.
     """
-    cached = load_checkpoint(case_id, "auditor")
-    if cached:
-        return cached
-
     print("\n[Auditor] Analysing denial letter and policy document...")
 
     prompt = f"""
 You are given two Indian insurance documents.
 
 === DENIAL LETTER ===
-{denial_text[:4000]}
+{source_marker("denial")}
 
 === POLICY DOCUMENT ===
-{policy_text[:4000]}
+{source_marker("policy")}
 
 Extract and return a JSON object with these exact fields:
 
@@ -66,7 +64,18 @@ Extract and return a JSON object with these exact fields:
 If any field is not found in the documents, use null.
 """
 
+    prompt, coverage = fit_document_prompt(
+        prompt, SYSTEM_PROMPT, {"denial": denial_text, "policy": policy_text}, denial_text, 4096, transport_reserve=dispatch_padding(True)
+    )
+    context_hash = hashlib.sha256((SYSTEM_PROMPT + prompt + retrieval_fingerprint()).encode()).hexdigest()
+    cached = load_checkpoint(case_id, "auditor")
+    if cached and cached.get("input_context_sha256") == context_hash:
+        return cached
+
     result = call_llm_json(prompt, system_prompt=SYSTEM_PROMPT)
+    if isinstance(result, dict):
+        result["input_coverage"] = coverage
+        result["input_context_sha256"] = context_hash
     save_checkpoint(case_id, "auditor", result)
     print("[Auditor] ✓ Done")
     return result

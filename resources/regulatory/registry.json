@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "registry_version": "2026-11-05.1",
+  "curation_scope": "Official artifact provenance and exact excerpts; all case-specific legal application requires human review. Gazette and policyholder-interest artifacts are catalogued; active excerpts currently come from the health circular.",
+  "sources": [
+    {
+      "id": "health-master-2024",
+      "title": "Master Circular on Health Insurance Business",
+      "reference": "IRDAI/HLT/CIR/PRO/84/5/2024",
+      "publisher": "IRDAI",
+      "published_date": "2024-05-29",
+      "publisher_version": "English attachment 1.0",
+      "official_url": "https://irdai.gov.in/documents/37343/991022/%E0%A4%B8%E0%A5%8D%E0%A4%B5%E0%A4%BE%E0%A4%B8%E0%A5%8D%E0%A4%A5%E0%A5%8D%E0%A4%AF+%E0%A4%AC%E0%A5%80%E0%A4%AE%E0%A4%BE+%E0%A4%B5%E0%A5%8D%E0%A4%AF%E0%A4%B5%E0%A4%B8%E0%A4%BE%E0%A4%AF+%E0%A4%AA%E0%A4%B0+%E0%A4%AE%E0%A4%BE%E0%A4%B8%E0%A5%8D%E0%A4%9F%E0%A4%B0+%E0%A4%AA%E0%A4%B0%E0%A4%BF%E0%A4%AA%E0%A4%A4%E0%A5%8D%E0%A4%B0-%E0%A4%85%E0%A4%82%E0%A4%97%E0%A5%8D%E0%A4%B0%E0%A5%87%E0%A4%9C%E0%A5%80+_+Master+Circular+on+Health+Insurance+Business+-English.pdf/08a32828-dc1d-116f-0549-6db86d448651?version=1.0&t=1719833433399&download=true",
+      "artifact_path": "artifacts/health-master-2024.pdf",
+      "artifact_sha256": "fdc70264ce307e0c0ead2de442881c907a03a638477c03a7aaf473d3cc139134",
+      "text_path": "artifacts/health-master-2024.pages.json",
+      "text_sha256": "0c1fed89e0fd5d345c8a1aab0b298050ede0e9d5cc80a794cf1e217dc1c0f741",
+      "retrieved_date": "2026-11-05",
+      "applicability_status": "requires_review"
+    },
+    {
+      "id": "policyholder-interests-master-2024",
+      "title": "Master Circular on Protection of Policyholders' Interests 2024",
+      "reference": "IRDAI/PP&GR/CIR/MISC/117/9/2024",
+      "publisher": "IRDAI",
+      "published_date": "2024-09-05",
+      "publisher_version": "Combined attachment 5.1",
+      "official_url": "https://irdai.gov.in/documents/37343/365525/%E0%A4%AA%E0%A4%BE%E0%A4%B2%E0%A4%BF%E0%A4%B8%E0%A5%80%E0%A4%A7%E0%A4%BE%E0%A4%B0%E0%A4%95%E0%A5%8B%E0%A4%82+%E0%A4%95%E0%A5%87+%E0%A4%B9%E0%A4%BF%E0%A4%A4%E0%A5%8B%E0%A4%82+%E0%A4%95%E0%A5%87+%E0%A4%B8%E0%A4%82%E0%A4%B0%E0%A4%95%E0%A5%8D%E0%A4%B7%E0%A4%A3+%E0%A4%B8%E0%A4%82%E0%A4%AC%E0%A4%82%E0%A4%A7%E0%A5%80+%E0%A4%AE%E0%A4%BE%E0%A4%B8%E0%A5%8D%E0%A4%9F%E0%A4%B0+%E0%A4%AA%E0%A4%B0%E0%A4%BF%E0%A4%AA%E0%A4%A4%E0%A5%8D%E0%A4%B0%2C+2024+_+Master+Circular+on+Protection+of+Policyholders%27+interests+2024.pdf/2bc6a186-5c96-461b-2946-89945b9d488c?version=5.1&t=1737118636654&download=true",
+      "artifact_path": "artifacts/policyholder-interests-master-2024.pdf",
+      "artifact_sha256": "2356489207c4959ef14206f3fd15a4415580cb35a6ade00f788777417de8b00e",
+      "text_path": "artifacts/policyholder-interests-master-2024.pages.json",
+      "text_sha256": "deb08ad5fe6127f6af626dc3c5345f359e49e8947374608ff48810ab135e22b8",
+      "retrieved_date": "2026-11-05",
+      "applicability_status": "requires_review"
+    },
+    {
+      "id": "insurance-products-regulations-2024",
+      "title": "IRDAI (Insurance Products) Regulations, 2024",
+      "reference": "IRDAI/Reg/8/202/2024",
+      "publisher": "Gazette of India",
+      "published_date": "2024-03-22",
+      "publisher_version": "Gazette artifact 253325",
+      "official_url": "https://egazette.gov.in/WriteReadData/2024/253325.pdf",
+      "artifact_path": "artifacts/insurance-products-regulations-2024.pdf",
+      "artifact_sha256": "9df3334ffcd9ba5c00618051c3bf25135e786e9cb38f75601f4af8edce19e395",
+      "text_path": "artifacts/insurance-products-regulations-2024.pages.json",
+      "text_sha256": "0abcde2d1f594c00dddf32e65a8932eccbc470dad4b363d9b11277b809083cd7",
+      "retrieved_date": "2026-11-05",
+      "applicability_status": "requires_review"
+    }
+  ],
+  "clauses": [
+    {
+      "id": "effective-context",
+      "source_id": "health-master-2024",
+      "page": 4,
+      "start": 0,
+      "end": 936,
+      "quoted_text": "Effective date:\n(1) This Master circular shall come into force with immediate effect except for\nprovisions where specific effective date is mentioned.\n(2) The existing products which are not complying with the IRDAI (Insurance\nProducts) Regulations 2024 and this Master Circular shall be modified on or\nbefore 30.09.2024. Revision in terms and conditions of the products that are\nwarranted exclusively due to the application of any of the updated provisions\ncontained in this circular or the IRDAI (Insurance Products) Regulations,2024\nshall be carried out under the extant UIN, with the approval of Product\nManagement Committee(PMC).\nThe PMC shall ensure that the benefits such as waiting period, Moratorium period\naccrued to the credit of the policyholder are protected and carried forward to the\nnew policy issued.\n(3) The Insurer may extend the benefits arising out of the revised regulatory\nframework to the existing policyholders.",
+      "categories": [
+        "*"
+      ],
+      "priority": 0,
+      "effective_from": null,
+      "effective_to": null,
+      "date_basis": "denial_date",
+      "applicability_status": "requires_review"
+    },
+    {
+      "id": "portability",
+      "source_id": "health-master-2024",
+      "page": 8,
+      "start": 516,
+      "end": 1477,
+      "quoted_text": "12) Portability in case of Indemnity Policies:\na. A Policyholder has the choice to port his/ her policies from one Insurer to\nanother. The Acquiring and the Existing Insurers shall jointly, ensure that\nthe entire underwriting details and claim history of the Policyholders are\nseamlessly transferred.\nb. The existing insurer shall provide the information sought by the Acquiring\ninsurer immediately but not more than 72 hours of receipt of request\nthrough Insurance Information Bureau of India (IIB) https://iib.gov.in/ portal.\nc. The Acquiring insurer shall decide and communicate on the proposal\nimmediately but not more than 5 days of receipt of information from\nExisting insurer.\nd. The policyholder is entitled to transfer the credits gained to the extent of\nthe Sum Insured, No Claim Bonus, specific waiting periods, waiting period\nfor pre-existing disease , Moratorium period etc from the Existing Insurer\nto the Acquiring Insurer in the previous policy.",
+      "categories": [
+        "waiting_period",
+        "pre_existing_condition",
+        "non_disclosure",
+        "other"
+      ],
+      "priority": 3,
+      "effective_from": null,
+      "effective_to": null,
+      "date_basis": "denial_date",
+      "applicability_status": "requires_review"
+    },
+    {
+      "id": "moratorium",
+      "source_id": "health-master-2024",
+      "page": 8,
+      "start": 1478,
+      "end": 1892,
+      "quoted_text": "13) Policy/Claim cannot be contested:\nNo policy and claim of health insurance shall be contestable on any grounds of\nnon-disclosure and/or misrepresentation except for established fraud, after the\ncompletion of the Moratorium Period, i.e. 60 months of continuous coverage\nNote :The accrued credits gained under the ported and migrated policies shall be\ncounted for the purpose of calculating the Moratorium period.",
+      "categories": [
+        "non_disclosure",
+        "pre_existing_condition",
+        "waiting_period"
+      ],
+      "priority": 2,
+      "effective_from": null,
+      "effective_to": null,
+      "date_basis": "denial_date",
+      "applicability_status": "requires_review"
+    },
+    {
+      "id": "cashless",
+      "source_id": "health-master-2024",
+      "page": 9,
+      "start": 38,
+      "end": 797,
+      "quoted_text": "15) Approval for Cashless facility:\na. Every insurer shall strive to achieve 100% cashless claim settlement in a\ntime bound manner. The insurers shall endeavor to ensure that the\ninstances of claims being settled through reimbursement are at bare\nminimum and only in exceptional circumstances.\nb. Insurer shall decide on the request for cashless authorization immediately\nbut not more than one hour of receipt of request. Necessary systems and\nprocedures shall be put in place by the Insurer immediately and not later\nthan 31st July, 2024.\nc. Insurers may arrange for dedicated Help Desks in physical mode at the\nhospital to deal and assist with the cashless requests.\nd. Insurers shall also provide pre-authorization to the policyholder through\nDigital mode.",
+      "categories": [
+        "network_hospital",
+        "documentation_missing",
+        "other"
+      ],
+      "priority": 10,
+      "effective_from": null,
+      "effective_to": null,
+      "date_basis": "denial_date",
+      "applicability_status": "requires_review"
+    },
+    {
+      "id": "discharge",
+      "source_id": "health-master-2024",
+      "page": 9,
+      "start": 798,
+      "end": 1450,
+      "quoted_text": "16) Final authorization for Discharge from the hospital:\na. Insurer shall grant final authorization within three hours of the receipt of\ndischarge authorization request from the hospital. In no case, the\npolicyholder shall be made to wait to be discharged from the Hospital.\nb. If there is any delay beyond three hours, the additional amount if any\ncharged by the hospital shall be borne by the insurer from shareholder’s\nfund.\nc. In the event of the death of the policyholder during the treatment, the\ninsurer shall:\ni. immediately process the request for claim settlement.\nii. get the mortal remains (dead body) released from the hospital\nimmediately",
+      "categories": [
+        "network_hospital",
+        "other"
+      ],
+      "priority": 15,
+      "effective_from": null,
+      "effective_to": null,
+      "date_basis": "denial_date",
+      "applicability_status": "requires_review"
+    },
+    {
+      "id": "claim-review",
+      "source_id": "health-master-2024",
+      "page": 9,
+      "start": 1451,
+      "end": 1819,
+      "quoted_text": "17) Settlement of Claims:\na) No claim shall be repudiated without the approval of PMC or a three-\nmember sub-group of PMC called the Claims Review Committee (CRC).\nb) In case, the claim is repudiated or disallowed partially, details shall be\nconveyed to the claimant along with full details giving reference to the\nspecific terms and conditions of the policy document.",
+      "categories": [
+        "*"
+      ],
+      "priority": 5,
+      "effective_from": null,
+      "effective_to": null,
+      "date_basis": "denial_date",
+      "applicability_status": "requires_review"
+    },
+    {
+      "id": "document-collection",
+      "source_id": "health-master-2024",
+      "page": 9,
+      "start": 1820,
+      "end": 2023,
+      "quoted_text": "c) Pursuant to intimation of the claim, Insurers and Third Party Administrators\n(TPAs) shall collect the required documents from the Hospitals.\nPolicyholder shall not be required to submit the documents.",
+      "categories": [
+        "documentation_missing"
+      ],
+      "priority": 10,
+      "effective_from": null,
+      "effective_to": null,
+      "date_basis": "denial_date",
+      "applicability_status": "requires_review"
+    },
+    {
+      "id": "grievances",
+      "source_id": "health-master-2024",
+      "page": 10,
+      "start": 727,
+      "end": 1108,
+      "quoted_text": "19) Redressal of Grievances of the Policyholder:\nThe Insurer is required to have robust system of Grievance Redressal Process.\nThe response letter of the Insurer in any grievance shall include the contact details\nof concerned insurance ombudsmen where his/her complaint can be escalated in\ncase, the policyholder is not satisfied by the grievance redressal provided by the\nInsurer.",
+      "categories": [
+        "*"
+      ],
+      "priority": 20,
+      "effective_from": null,
+      "effective_to": null,
+      "date_basis": "denial_date",
+      "applicability_status": "requires_review"
+    },
+    {
+      "id": "companion-circular",
+      "source_id": "health-master-2024",
+      "page": 10,
+      "start": 1527,
+      "end": 1760,
+      "quoted_text": "The detailed provisions in respect of paras 4,5,7,12,17,18,19 and 20 above will be given\nin the Master Circular issued under IRDAI (Protection of Policyholders’ Interests,\nOperations and Allied Matters of Insurers) Regulations, 2024.",
+      "categories": [
+        "*"
+      ],
+      "priority": 1,
+      "effective_from": null,
+      "effective_to": null,
+      "date_basis": "denial_date",
+      "applicability_status": "requires_review"
+    }
+  ]
+}

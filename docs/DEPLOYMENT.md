@@ -38,10 +38,17 @@ frontend variables. `VITE_API_KEY` is an API access key, not the provider secret
 
 ## Persistence and recovery
 
-The API stores queued jobs in `data/jobs.sqlite3`. Jobs that were marked
-`running` when the service stopped are returned to `queued` on the next startup.
-The worker processes one job at a time, which protects the Gemini quota and keeps
-resource usage predictable.
+The API stores queued jobs in `data/jobs.sqlite3`. The active worker holds a
+sidecar process lock for the database through recovery, execution, and upload
+cleanup. Opening another store does not reset live jobs. After obtaining the
+lock, a worker returns orphaned `running` jobs to `queued`; standby workers wait
+and take over when the previous owner exits. Keep the sidecar lock file in place
+while services are running. This remains a single-host queue.
+
+The worker processes one job at a time, which protects provider quota and keeps
+resource usage predictable. Checkpoints are bound to the complete source inputs;
+changed inputs or older checkpoints without a source fingerprint trigger a fresh
+analysis even when the case ID is unchanged.
 
 Mount `/app/data` to durable storage in production. Uploaded source PDFs are
 removed after processing; configure an encrypted backup or retention workflow
@@ -58,3 +65,12 @@ only if your legal or operational requirements require retaining them.
 - Review generated letters and citations before sending them to an insurer.
 - For multiple API replicas, replace SQLite polling with a shared queue and a
   database with appropriate locking.
+
+
+## Immutable regulatory assets
+
+Bundled official regulatory artifacts live in `/app/resources/regulatory` outside
+`/app/data`. Existing data volumes therefore keep jobs and uploads without hiding
+new registry versions during image upgrades. Do not mount mutable data volumes
+over `/app/resources`. Operator import candidates remain separate from the bundled
+curated corpus. Rebuild and restart the service to load a new bundled version.

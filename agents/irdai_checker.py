@@ -6,18 +6,14 @@ Identifies which regulations the insurer may have violated.
 This is what makes the appeal legally grounded — not generic complaints.
 """
 
-from tools.llm_client import call_llm_json
-from tools.irdai_knowledge import (
-  CITATION_REVIEW_STATUS,
-  OFFICIAL_SOURCES,
-    IRDAI_REGULATIONS,
-    OMBUDSMAN_PRECEDENTS,
-    INSURER_PATTERNS,
-    find_applicable_regulations,
-)
+from tools.llm_client import call_llm_json, dispatch_padding
+from tools.irdai_knowledge import CITATION_REVIEW_STATUS, OFFICIAL_SOURCES
+from tools.regulatory_registry import load_registry
+from tools.document_context import context_config, ensure_prompt_budget
 from tools.io_utils import save_checkpoint, load_checkpoint
 from tools.agent_validation import AgentOutputError, validate_agent_output
 import json
+import hashlib
 
 SYSTEM_PROMPT = """
 You are a careful research assistant for Indian health-insurance appeals.
@@ -80,21 +76,14 @@ def run(auditor_output: dict, policy_analyst_output: dict, case_id: str) -> dict
     Check the denial against IRDAI regulations.
     Returns applicable regulations, violations, precedents, and appeal rights.
     """
-    cached = load_checkpoint(case_id, "irdai_checker")
-    if cached:
-        return _apply_valid_denial_guardrail(cached, policy_analyst_output)
-
-    print("\n[IRDAI Checker] Checking against Indian insurance regulations...")
-
-    # Programmatically find applicable regulations
+    registry = load_registry()
     denial_category = auditor_output.get("denial_reason_category", "other")
-    insurer_name = auditor_output.get("insurer_name", "")
-    applicable = find_applicable_regulations(denial_category, insurer_name)
-
-    # Build comprehensive context
-    regs_context = json.dumps(IRDAI_REGULATIONS, indent=2)
-    precedents_context = json.dumps(applicable.get("precedents", []), indent=2)
-    insurer_tips = json.dumps(applicable.get("insurer_tips"), indent=2) if applicable.get("insurer_tips") else "None"
+    insurer_name = auditor_output.get("insurer_name") or ""
+    evidence = registry.select(denial_category, auditor_output, context_config()["regulatory_budget"])
+    print("\n[IRDAI Checker] Checking pinned official source excerpts...")
+    regs_context = evidence.text or "No applicable pinned excerpts were selected; request human source review."
+    precedents_context = "No independently verified case-law orders are registered. Do not invent precedents."
+    insurer_tips = "No verified insurer-specific pattern evidence is supplied."
 
     prompt = f"""
 CLAIM DENIAL DETAILS:
@@ -110,7 +99,7 @@ POLICY ANALYSIS FINDINGS:
 - Waiting period violation: {policy_analyst_output.get('waiting_period_violation')}
 - Exclusion validly applied: {policy_analyst_output.get('exclusion_validly_applied')}
 
-IRDAI REGULATORY KNOWLEDGE BASE:
+PINNED OFFICIAL SOURCE EXCERPTS (legal applicability requires human review):
 {regs_context}
 
 OFFICIAL SOURCES FOR HUMAN VERIFICATION:
@@ -122,14 +111,20 @@ RELEVANT OMBUDSMAN PRECEDENTS:
 INSURER-SPECIFIC PATTERNS FOR {insurer_name}:
 {insurer_tips}
 
-Based on ALL of the above, identify all applicable IRDAI regulations, violations, 
+Use only the pinned excerpts for regulatory facts. Treat effective-date qualifications
+and companion-circular notices as constraints. A genuine source is not proof of a
+case-specific violation. Cite an exact supplied evidence_id and quoted_text for each
+source-linked point; otherwise leave them empty and require review.
+Based on the above, identify candidate IRDAI regulations, possible concerns,
 relevant Ombudsman precedents, and the best appeal rights pathway.
 
 Return a JSON object:
 {{
   "applicable_regulations": [
     {{
-      "regulation": "Name/number of regulation or circular",
+      "regulation": "Name/number of supplied regulation or circular",
+      "evidence_id": "Exact supplied evidence ID, or empty",
+      "quoted_text": "Exact supporting source excerpt, or empty",
       "relevance": "How this regulation applies to this case",
       "favours": "policyholder / insurer / neutral",
       "verification_status": "verified / requires_manual_verification",
@@ -155,7 +150,7 @@ Return a JSON object:
   "timeline_breach_details": "If the insurer took longer than IRDAI mandated timelines, explain",
   "procedural_violations": ["Any procedural violations — e.g. verbal denial without written reasoning"],
   "moratorium_applicable": true/false,
-  "moratorium_details": "If the 8-year moratorium applies, explain how",
+  "moratorium_details": "Whether a supplied source supports a moratorium argument; applicability requires review",
   "appeal_pathway": {{
     "recommended_first_step": "internal_grievance / bima_bharosa / ombudsman",
     "reasoning": "Why this step is recommended",
@@ -166,7 +161,9 @@ Return a JSON object:
   }},
   "key_legal_points_for_appeal": [
     {{
-      "point": "Legal argument to make in the appeal",
+      "point": "Candidate legal argument requiring human review",
+      "evidence_id": "Exact supplied evidence ID, or empty",
+      "quoted_text": "Exact supporting source excerpt, or empty",
       "irdai_citation": "Specific IRDAI rule or circular to cite",
       "precedent_support": "Ombudsman precedent that supports this, if any",
       "argument_strength": "strong / moderate / weak"
@@ -182,6 +179,15 @@ Return a JSON object:
   }}
 }}
 """
+
+    context_hash = hashlib.sha256(json.dumps(
+        [auditor_output, policy_analyst_output, registry.fingerprint, evidence.as_dict(), context_config()],
+        sort_keys=True, ensure_ascii=False,
+    ).encode()).hexdigest()
+    ensure_prompt_budget(prompt, SYSTEM_PROMPT, 1536 + dispatch_padding(True))
+    cached = load_checkpoint(case_id, "irdai_checker")
+    if cached and cached.get("input_context_sha256") == context_hash:
+        return _apply_valid_denial_guardrail(cached, policy_analyst_output)
 
     result = None
     last_error = None
@@ -199,6 +205,7 @@ Return a JSON object:
                     f"Previous validation error: {last_error}\n\n{prompt}"
                 )
                 output_budget = 1024
+            ensure_prompt_budget(request_prompt, SYSTEM_PROMPT, output_budget + dispatch_padding(True))
             raw_result = call_llm_json(
                 request_prompt,
                 system_prompt=SYSTEM_PROMPT,
@@ -213,6 +220,9 @@ Return a JSON object:
     if result is None:
         raise AgentOutputError(f"IRDAI Checker returned no validated result: {last_error}")
     result = _apply_citation_review_metadata(result)
+    result = registry.annotate(result, evidence)
+    result["verified_source_context"] = evidence.text
+    result["input_context_sha256"] = context_hash
     result = _apply_valid_denial_guardrail(result, policy_analyst_output)
     save_checkpoint(case_id, "irdai_checker", result)
     print("[IRDAI Checker] ✓ Done")

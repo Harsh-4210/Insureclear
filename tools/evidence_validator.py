@@ -6,6 +6,7 @@ judge whether an argument is legally correct.
 """
 
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 import re
 from typing import Mapping
 
@@ -45,7 +46,7 @@ _DATE = re.compile(
     re.I,
 )
 _AMOUNT = re.compile(
-    r"(?:(?:₹|INR|Rs\.?)\s*[\d,]+(?:\.\d+)?|"
+    r"(?:(?:₹|INR|Rs\.?)\s*[\d,]+(?:\.\d+)?(?:\s*(?:lakhs?|crores?))?|"
     r"[\d,]+(?:\.\d+)?\s*(?:rupees|INR|lakhs?|crores?))",
     re.I,
 )
@@ -81,8 +82,37 @@ def _normalise(value: str) -> str:
     return re.sub(r"[^a-z0-9]", "", value.replace("\u00a0", " ").replace("\u202f", " ").lower())
 
 
+def _contains_reference(value: str, source: str) -> bool:
+    # Permit formatting differences, but never prefixes of longer identifiers,
+    # numbers or clause references (e.g. POL-123 versus POL-1234).
+    tokens = re.findall(r"[a-z0-9]+", value.lower())
+    if not tokens:
+        return False
+    pattern = r"(?<![a-z0-9/_-])" + r"[^a-z0-9]*".join(map(re.escape, tokens)) + r"(?![a-z0-9]|[./_-][a-z0-9])"
+    return re.search(pattern, source, re.I) is not None
+
+
+def _amount_value(value: str):
+    match = re.search(r"[\d,]+(?:\.\d+)?", value)
+    if not match:
+        return None
+    try:
+        number = Decimal(match.group().replace(",", ""))
+    except InvalidOperation:
+        return None
+    lower = value.lower()
+    if "lakh" in lower:
+        number *= 100000
+    elif "crore" in lower:
+        number *= 10000000
+    return number
+
+
 def _present(value: str, source: str) -> bool:
-    if _normalise(value) in _normalise(source):
+    if _AMOUNT.fullmatch(value.strip()):
+        amount = _amount_value(value)
+        return amount is not None and any(_amount_value(candidate) == amount for candidate in _AMOUNT.findall(source))
+    if _contains_reference(value, source):
         return True
     identifier = re.search(
         r"(?:(?:policy|claim|case|member|certificate|customer|UHID|reference|ref(?:erence)?)"
@@ -91,7 +121,7 @@ def _present(value: str, source: str) -> bool:
         value,
         re.I,
     )
-    if identifier and _normalise(identifier.group(1)) in _normalise(source):
+    if identifier and _contains_reference(identifier.group(1), source):
         return True
     clause_number = re.fullmatch(
         r"(?:clause|section|regulation|rule|article|paragraph|para|exclusion)"
@@ -105,11 +135,6 @@ def _present(value: str, source: str) -> bool:
         re.I,
     ):
         return True
-    amount = re.search(r"(?:₹|INR|Rs\.?)\s*([\d,]+(?:\.\d+)?)", value, re.I)
-    if amount and re.search(r"\d[\d,]*(?:\.\d+)?", source):
-        value_digits = re.sub(r"\D", "", amount.group())
-        source_digits = {re.sub(r"\D", "", match) for match in re.findall(r"\d[\d,]*(?:\.\d+)?", source)}
-        return value_digits in source_digits
     return False
 
 
@@ -165,12 +190,17 @@ def validate_appeal_letter(
             EvidenceIssue("missing_sources", "", "No denial, policy, or regulatory source text supplied")
         ])
 
+    case_text = "\n".join(str((sources or {}).get(key) or "") for key in ("denial", "policy"))
     issues: list[EvidenceIssue] = []
     _add_missing(issues, "unsupported_id", _ID.findall(letter), source_text)
     _add_missing(issues, "unsupported_id", _BARE_ID.findall(letter), source_text)
     _add_missing(issues, "unsupported_date", _DATE.findall(letter), source_text)
-    _add_missing(issues, "unsupported_amount", _AMOUNT.findall(letter), source_text)
-    _add_missing(issues, "unsupported_clause", _CLAUSE.findall(letter), source_text)
+    _add_missing(issues, "unsupported_amount", _AMOUNT.findall(letter), case_text)
+    for match in _CLAUSE.finditer(letter):
+        value = match.group()
+        prefix = letter[max(0, match.start() - 100):match.start()].lower()
+        explicitly_regulatory = value.lower().startswith(("regulation", "rule", "article", "paragraph", "para")) or bool(re.search(r"irdai|circular|regulatory|gazette", prefix))
+        _add_missing(issues, "unsupported_clause", [value], source_text if explicitly_regulatory else case_text)
 
     for value in _CASE_LAW.findall(letter):
         value = value.strip()
@@ -182,7 +212,7 @@ def validate_appeal_letter(
 
     for sentence in re.split(r"(?<=[.!?])\s+", letter):
         medical_terms = _MEDICAL.findall(sentence)
-        if medical_terms and not any(_present(term, source_text) for term in medical_terms):
+        if medical_terms and not any(_present(term, case_text) for term in medical_terms):
             issues.append(EvidenceIssue(
                 "unsupported_medical_claim", sentence.strip(),
                 "Medical claim is not supported by supplied sources",

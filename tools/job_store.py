@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import errno
 import json
+import os
 import sqlite3
+from contextlib import contextmanager
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,8 +52,44 @@ class JobStore:
                 )
                 """
             )
+
+    @contextmanager
+    def worker_lock(self):
+        """Hold the single-worker process lock through execution and upload cleanup."""
+        lock_path = Path(str(self.db_path.resolve()) + ".worker.lock")
+        with lock_path.open("a+b") as handle:
+            if os.fstat(handle.fileno()).st_size == 0:
+                handle.write(b"0")
+                handle.flush()
+            handle.seek(0)
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as exc:
+                if exc.errno not in (errno.EACCES, errno.EAGAIN):
+                    raise
+                yield False
+                return
+            try:
+                yield True
+            finally:
+                if os.name == "nt":
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    def recover_running(self) -> None:
+        """Recover orphaned jobs after obtaining the exclusive worker lock."""
+        with self._lock, self._connect() as connection:
             connection.execute(
-                "UPDATE jobs SET status = 'queued', stage = 'queued', message = 'Recovered after restart' WHERE status = 'running'"
+                "UPDATE jobs SET status = 'queued', stage = 'queued', "
+                "message = 'Recovered after restart', updated_at = ? WHERE status = 'running'",
+                (self._now(),),
             )
 
     @staticmethod

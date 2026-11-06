@@ -14,10 +14,9 @@ from io import StringIO
 PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.pdf_reader import extract_text_from_pdf, extract_text_safe
-from tools.io_utils import save_final_output, clear_session
+from orchestrator.main import run_pipeline
+from tools.io_utils import clear_session
 from tools.llm_client import get_stats
-from agents import auditor, policy_analyst, irdai_checker, appeal_writer, judge
 
 
 MIN_APPROVE_SCORE = 0.75
@@ -332,98 +331,38 @@ if generate:
     # Set case ID
     cid = case_id if case_id else f"web_{uuid.uuid4().hex[:8]}"
 
-    if fresh_run:
-        clear_session(cid)
-
     # ── Pipeline Execution ────────────────────────────────────────
     progress = st.progress(0, text="Starting pipeline...")
 
     try:
-        # Step 0: Extract text
-        if not denial_text or not policy_text:
-            progress.progress(5, text="📄 Extracting text from PDFs...")
-            if not denial_text:
-                denial_text = extract_text_from_pdf(denial_pdf)
-            if not policy_text:
-                policy_text = extract_text_from_pdf(policy_pdf)
+        if fresh_run:
+            clear_session(cid)
 
-        # Validate
-        if len(denial_text.split()) < 10:
-            st.error("Denial letter text is too short. Please check the file.")
-            st.stop()
-        if len(policy_text.split()) < 10:
-            st.error("Policy document text is too short. Please check the file.")
-            st.stop()
+        def update_progress(event):
+            progress.progress(event.get("percent") or 0, text=event.get("message") or "Processing...")
 
-        # Step 1: Auditor
-        progress.progress(15, text="🔍 Agent 1/5 — Auditor: Parsing documents...")
-        with st.spinner("Auditor Agent analysing documents..."):
-            auditor_result = auditor.run(denial_text, policy_text, cid)
-
-        # Step 2: Policy Analyst
-        progress.progress(30, text="📋 Agent 2/5 — Policy Analyst: Examining policy terms...")
-        with st.spinner("Policy Analyst examining policy..."):
-            policy_result = policy_analyst.run(policy_text, auditor_result, cid)
-
-        # Step 3: IRDAI Checker
-        progress.progress(50, text="⚖️ Agent 3/5 — IRDAI Checker: Checking regulations...")
-        with st.spinner("IRDAI Checker matching against regulations..."):
-            irdai_result = irdai_checker.run(auditor_result, policy_result, cid)
-
-        # Step 4: Appeal Writer
-        progress.progress(70, text="✍️ Agent 4/5 — Appeal Writer: Drafting letter...")
-        with st.spinner("Appeal Writer drafting letter..."):
-            letter = appeal_writer.run(auditor_result, policy_result, irdai_result, cid)
-
-        # Step 5: Judge
-        progress.progress(85, text="👨‍⚖️ Agent 5/5 — Judge: Reviewing quality...")
-        with st.spinner("Judge reviewing and scoring..."):
-            judge_result = judge.run(letter, auditor_result, irdai_result, cid)
-
-        # Revision loop
-        score = judge_result.get("overall_score", 0)
-        recommendation = judge_result.get("recommendation", "APPROVE")
-        revision_count = 0
-
-        if score < MIN_APPROVE_SCORE and recommendation == "APPROVE":
-            recommendation = "REVISE"
-
-        while recommendation == "REVISE" and revision_count < 2:
-            revision_count += 1
-            progress.progress(90, text=f"📝 Revision #{revision_count} — Improving letter...")
-            with st.spinner(f"Revising letter (attempt #{revision_count})..."):
-                letter = appeal_writer.revise(letter, judge_result, auditor_result, irdai_result, cid, revision_count)
-
-                # Clear judge checkpoint and re-evaluate
-                from tools.io_utils import get_checkpoint_path
-                judge_cp = get_checkpoint_path(cid, "judge")
-                if judge_cp.exists():
-                    judge_cp.unlink()
-
-                judge_result = judge.run(letter, auditor_result, irdai_result, cid)
-                score = judge_result.get("overall_score", 0)
-                recommendation = judge_result.get("recommendation", "APPROVE")
-
-                if score < MIN_APPROVE_SCORE and recommendation == "APPROVE":
-                    recommendation = "REVISE"
-
-        progress.progress(100, text="✅ Pipeline complete!")
-
-        # Save output
-        full_report = {
-            "case_id": cid,
-            "auditor": auditor_result,
-            "policy_analyst": policy_result,
-            "irdai_checker": irdai_result,
-            "judge": judge_result,
-            "appeal_letter": letter,
-            "pipeline_stats": {
-                "revision_count": revision_count,
-                "final_score": score,
-                "final_recommendation": recommendation,
-            },
-        }
-        output_dir = save_final_output(cid, letter, full_report)
+        full_report = run_pipeline(
+            denial_pdf=denial_pdf,
+            policy_pdf=policy_pdf,
+            case_id=cid,
+            denial_text=denial_text,
+            policy_text=policy_text,
+            progress_callback=update_progress,
+        )
+        auditor_result = full_report["auditor"]
+        policy_result = full_report["policy_analyst"]
+        irdai_result = full_report["irdai_checker"]
+        judge_result = full_report["judge"]
+        letter = full_report["appeal_letter"]
+        score = full_report["pipeline_stats"]["final_score"]
+        recommendation = full_report["pipeline_stats"]["final_recommendation"]
+        revision_count = full_report["pipeline_stats"]["revision_count"]
+        output_dir = Path(full_report["artifacts"]["output_dir"])
+        progress.progress(100, text="Draft processing complete")
+        if recommendation == "VALIDATION_ERROR":
+            st.error("This draft failed evidence validation. Review the report before using it.")
+        for reason in full_report.get("review_reasons", []):
+            st.warning(reason)
 
         # ── Results Display ───────────────────────────────────────
         st.markdown("---")
@@ -498,10 +437,10 @@ if generate:
                 <ol>
                     <li><strong>Fill in placeholders</strong> — Replace [POLICYHOLDER NAME], [DATE], [INSURER ADDRESS] with your details</li>
                     <li><strong>Attach documents</strong> — Hospital bills, discharge summary, doctor's certificate, policy copy</li>
-                    <li><strong>Send to insurer</strong> — Email to the Grievance Officer (address in the letter). Keep delivery proof.</li>
-                    <li><strong>Wait 15 days</strong> — Insurer must respond within 15 days under IRDAI rules</li>
+                    <li><strong>Review before sending</strong> — Verify every case fact, source reference and proposed argument with a reviewer.</li>
+                    <li><strong>Check applicable timelines</strong> — Use the response and escalation periods established by the sources applicable to your case.</li>
                     <li><strong>If no response</strong> — Escalate to <a href="https://bimabharosa.irdai.gov.in" target="_blank">Bima Bharosa</a> (free)</li>
-                    <li><strong>If still unresolved</strong> — File with <a href="https://cioins.co.in" target="_blank">Insurance Ombudsman</a> (free, binding up to ₹50 lakh)</li>
+                    <li><strong>If still unresolved</strong> — File with <a href="https://cioins.co.in" target="_blank">Insurance Ombudsman</a> (check current eligibility and applicable limits)</li>
                 </ol>
             </div>""", unsafe_allow_html=True)
 
@@ -614,6 +553,14 @@ if generate:
     except Exception as e:
         st.error(f"❌ Pipeline error: {e}")
         st.exception(e)
+    finally:
+        if input_mode == "📄 Upload PDFs" and "temp_dir" in locals():
+            for filename in ("denial.pdf", "policy.pdf"):
+                (temp_dir / filename).unlink(missing_ok=True)
+            try:
+                temp_dir.rmdir()
+            except OSError:
+                pass
 
 # ── Footer ───────────────────────────────────────────────────────
 st.markdown("---")

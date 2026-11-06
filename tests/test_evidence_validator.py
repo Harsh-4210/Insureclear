@@ -1,3 +1,5 @@
+import pytest
+
 from tools.evidence_validator import sanitize_unsupported_references, validate_appeal_letter
 
 
@@ -88,3 +90,40 @@ def test_sanitizes_unsupported_medical_claims():
     result = validate_appeal_letter(letter, {"denial": "Treatment was denied."})
     sanitized = sanitize_unsupported_references(letter, result)
     assert validate_appeal_letter(sanitized, {"denial": "Treatment was denied."}).valid
+
+
+@pytest.mark.parametrize("letter,source,category", [
+    ("Policy Number: POL-123.", "Policy Number: POL-1234.", "unsupported_id"),
+    ("Policy Number: POL-123.", "Policy Number: POL-123-9.", "unsupported_id"),
+    ("Policy Number: POL-123.", "Policy Number: POL-123/9.", "unsupported_id"),
+    ("The amount is INR 1000.", "The amount is INR 10000.", "unsupported_amount"),
+    ("Please review Clause 4.2.", "Please review Clause 4.20.", "unsupported_clause"),
+    ("Please review Clause 4.2.", "Please review Clause 4.2.1.", "unsupported_clause"),
+])
+def test_rejects_concrete_claims_that_are_only_prefix_matches(letter, source, category):
+    result = validate_appeal_letter(letter, {"denial": source})
+    assert not result.valid
+    assert category in {issue.category for issue in result.errors}
+
+
+def test_case_amounts_and_policy_clauses_are_not_grounded_by_regulatory_numbers():
+    from tools.regulatory_registry import load_registry
+    registry = load_registry()
+    clause = next(c for c in registry.clauses if c["id"] == "moratorium")
+    result = validate_appeal_letter("I claimed INR 60 under Clause 13.", {"denial": "The hospitalisation claim was denied.", "policy": "Cover depends on the actual policy terms.", "regulatory": clause["text"]})
+    assert not result.valid
+    assert {"unsupported_amount", "unsupported_clause"} <= {i.category for i in result.errors}
+
+
+@pytest.mark.parametrize("letter,source,want", [
+    ("I claimed INR 2.", "The claim amount is Rs 2 lakh.", False),
+    ("I claimed INR 200000.", "The claim amount is Rs 2 lakh.", True),
+])
+def test_currency_multipliers_do_not_change_case_amounts(letter, source, want):
+    assert validate_appeal_letter(letter, {"denial": source}).valid is want
+
+
+def test_patient_identifier_cannot_be_sourced_from_a_regulatory_circular():
+    reference = "IRDAI/HLT/CIR/PRO/84/5/2024"
+    result = validate_appeal_letter("Policy Number: " + reference + ".", {"denial": "A claim was denied.", "regulatory": "Official circular " + reference})
+    assert not result.valid

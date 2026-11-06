@@ -12,7 +12,8 @@ checkboxes and evidence sections whenever a milestone is completed.
 
 ### Completed baseline
 
-- 28 automated tests pass.
+- 62 automated tests pass after the local Superpowers review (provider calls mocked).
+  See [review and remaining work](SUPERPOWERS_REVIEW.md).
 - Strict targeted evaluation for `c01` and `c05` passes:
   - Verdict accuracy: 100%.
   - Letter-fact accuracy: 100%.
@@ -222,6 +223,8 @@ when possible.
 | 2026-11-05 | pending | Full ten-case strict gates | Failed | 10 cases scored; verdict accuracy 1.0; unsupported-claim rate 0.3; 0 failures and 0 Groq 429s |
 | 2026-11-05 | pending | Full ten-case strict gates | Failed | 10 cases scored; verdict accuracy 1.0; unsupported-claim rate 0.2; 0 failures and 0 Groq 429s; two unsupported medical assertions |
 | 2026-11-05 | `5e6513f` | Full ten-case strict gates | Passed | 10 cases scored; extraction/verdict/letter facts 1.0; unsupported claims 0.0; failed cases 0; 1 Groq 429; mean Judge score 0.687 |
+| 2026-11-05 | working tree on `443d837` | Superpowers review: automated tests and frontend build | Passed | 62 backend tests; frontend build passed; live provider evaluation not rerun; `docs/SUPERPOWERS_REVIEW.md` |
+| 2026-11-05 | working tree on `443d837` | Live strict regression after Superpowers fixes | Passed configured gates | `eval/results/sp_base_20261105`; 10/10 verdicts; 0 unsupported claims; letter facts 97.5%; 88 calls; 7 rate-limit retries; see `docs/LIVE_REGRESSION_2026-11-05.md` |
 
 ## Operational commands
 

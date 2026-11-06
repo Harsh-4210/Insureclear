@@ -13,6 +13,7 @@ import re
 import threading
 import httpx
 from dotenv import load_dotenv
+from tools.document_context import ensure_prompt_budget, estimate_tokens
 
 load_dotenv()
 
@@ -37,6 +38,23 @@ if PROVIDER == "groq":
 else:
     import google.generativeai as genai
     MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+
+
+JSON_INSTRUCTION = "\n\nIMPORTANT: Respond with ONLY valid JSON. No explanation, no markdown code blocks, no preamble."
+
+
+def dispatch_padding(json_mode: bool = False) -> int:
+    reasoning = GROQ_REASONING_TOKEN_BUDGET if PROVIDER == "groq" else 0
+    if reasoning < 0:
+        raise ValueError("Reasoning reserve cannot be negative")
+    return reasoning + (estimate_tokens(JSON_INSTRUCTION) if json_mode else 0) + 2
+
+
+def _check_dispatch_budget(prompt: str, system_prompt: str, output_tokens: int) -> None:
+    if output_tokens <= 0:
+        raise ValueError("Output token budget must be positive")
+    full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+    ensure_prompt_budget(full_prompt, "", output_tokens)
 
 
 def _init():
@@ -102,8 +120,11 @@ def _select_groq_key() -> tuple[str, float]:
             if _groq_key_cooldowns.get(key, 0.0) <= now:
                 _groq_key_index = (index + 1) % len(keys)
                 return key, 0.0
-        wait = min(_groq_key_cooldowns.get(key, now) for key in keys) - now
-        return keys[_groq_key_index % len(keys)], max(wait, 0.0)
+        index = min(range(len(keys)), key=lambda i: _groq_key_cooldowns.get(keys[i], now))
+        key = keys[index]
+        wait = _groq_key_cooldowns.get(key, now) - now
+        _groq_key_index = (index + 1) % len(keys)
+        return key, max(wait, 0.0)
 
 
 def _groq_key_slot(key: str) -> int:
@@ -130,6 +151,9 @@ def _call_groq(
     global _total_calls, _total_time, _total_tokens, _total_retries, _total_429s
 
     max_output_tokens = min(max_output_tokens, GROQ_MAX_OUTPUT_TOKENS)
+    if GROQ_REASONING_TOKEN_BUDGET < 0:
+        raise ValueError("Reasoning reserve cannot be negative")
+    _check_dispatch_budget(prompt, system_prompt, max_output_tokens + GROQ_REASONING_TOKEN_BUDGET)
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
@@ -233,7 +257,7 @@ def _groq_retry_wait(headers, attempt: int, body: str = "") -> float:
     )
     if body_match:
         value = float(body_match.group(1))
-        if body_match.group(2).lower().startswith("ms"):
+        if body_match.group(2).lower().startswith(("ms", "millisecond")):
             value /= 1000
         return max(value + 0.1, 0.1)
     retry_after = _duration_seconds(headers.get("retry-after"))
@@ -267,6 +291,7 @@ def call_llm(
         return _call_groq(prompt, system_prompt, temperature, max_output_tokens, json_mode=False)
 
     full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+    _check_dispatch_budget(prompt, system_prompt, max_output_tokens)
 
     model = genai.GenerativeModel(
         model_name=MODEL_NAME,
@@ -314,7 +339,7 @@ def call_llm_json(
     """
     _init()
 
-    json_instruction = "\n\nIMPORTANT: Respond with ONLY valid JSON. No explanation, no markdown code blocks, no preamble."
+    json_instruction = JSON_INSTRUCTION
 
     # Try native JSON mode first
     try:
@@ -357,16 +382,18 @@ def _call_native_json(
             0.1,
             max_output_tokens,
             json_mode=True,
+            max_retries=max_retries,
         )
         return _parse_json_response(raw)
 
     full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+    _check_dispatch_budget(prompt, system_prompt, max_output_tokens)
 
     model = genai.GenerativeModel(
         model_name=MODEL_NAME,
         generation_config=genai.GenerationConfig(
             temperature=0.1,
-            max_output_tokens=4096,
+            max_output_tokens=max_output_tokens,
             response_mime_type="application/json",
         ),
     )

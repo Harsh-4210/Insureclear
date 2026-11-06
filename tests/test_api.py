@@ -1,3 +1,6 @@
+import threading
+from contextlib import contextmanager
+
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -68,3 +71,43 @@ def test_api_rejects_unsafe_pdf_upload(monkeypatch, tmp_path):
         )
 
     assert response.status_code == 415
+
+
+def test_waiting_worker_takes_over_existing_job_when_owner_exits(monkeypatch, tmp_path):
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    store.create("handover_job", {"case_id": "handover_case"}, "text", "handover_case", False)
+    assert store.claim_next()[0] == "handover_job"
+    stop = threading.Event()
+    blocked = threading.Event()
+    completed = threading.Event()
+    real_lock = store.worker_lock
+
+    @contextmanager
+    def observed_lock():
+        with real_lock() as acquired:
+            if not acquired:
+                blocked.set()
+            yield acquired
+
+    def process(job_id, payload):
+        store.update(job_id, status="completed")
+        completed.set()
+        stop.set()
+
+    monkeypatch.setattr(store, "worker_lock", observed_lock)
+    monkeypatch.setattr(api, "job_store", store)
+    monkeypatch.setattr(api, "_worker_stop", stop)
+    monkeypatch.setattr(api, "_run_job", process)
+    worker = threading.Thread(target=api._worker_loop, daemon=True)
+    try:
+        with real_lock() as acquired:
+            assert acquired
+            worker.start()
+            assert blocked.wait(5), "Standby worker must attempt ownership"
+            assert not completed.is_set()
+            assert store.get("handover_job")["status"] == "running"
+        assert completed.wait(5), "Standby must recover work without a new submission"
+        assert store.get("handover_job")["status"] == "completed"
+    finally:
+        stop.set()
+        worker.join(timeout=5)

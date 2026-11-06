@@ -1,0 +1,36 @@
+[
+  {
+    "id": "health-master-2024",
+    "listing_url": "https://irdai.gov.in/document-detail?documentId=4942918",
+    "official_url": "https://irdai.gov.in/documents/37343/991022/%E0%A4%B8%E0%A5%8D%E0%A4%B5%E0%A4%BE%E0%A4%B8%E0%A5%8D%E0%A4%A5%E0%A5%8D%E0%A4%AF+%E0%A4%AC%E0%A5%80%E0%A4%AE%E0%A4%BE+%E0%A4%B5%E0%A5%8D%E0%A4%AF%E0%A4%B5%E0%A4%B8%E0%A4%BE%E0%A4%AF+%E0%A4%AA%E0%A4%B0+%E0%A4%AE%E0%A4%BE%E0%A4%B8%E0%A5%8D%E0%A4%9F%E0%A4%B0+%E0%A4%AA%E0%A4%B0%E0%A4%BF%E0%A4%AA%E0%A4%A4%E0%A5%8D%E0%A4%B0-%E0%A4%85%E0%A4%82%E0%A4%97%E0%A5%8D%E0%A4%B0%E0%A5%87%E0%A4%9C%E0%A5%80+_+Master+Circular+on+Health+Insurance+Business+-English.pdf/08a32828-dc1d-116f-0549-6db86d448651?version=1.0&t=1719833433399&download=true",
+    "sha256": "fdc70264ce307e0c0ead2de442881c907a03a638477c03a7aaf473d3cc139134",
+    "bytes": 962806,
+    "pages": 17,
+    "retrieved_date": "2026-11-05",
+    "status": "official_artifact_retrieved",
+    "applicability": "requires_review"
+  },
+  {
+    "id": "policyholder-interests-master-2024",
+    "listing_url": "https://irdai.gov.in/document-detail?documentId=5625747",
+    "official_url": "https://irdai.gov.in/documents/37343/365525/%E0%A4%AA%E0%A4%BE%E0%A4%B2%E0%A4%BF%E0%A4%B8%E0%A5%80%E0%A4%A7%E0%A4%BE%E0%A4%B0%E0%A4%95%E0%A5%8B%E0%A4%82+%E0%A4%95%E0%A5%87+%E0%A4%B9%E0%A4%BF%E0%A4%A4%E0%A5%8B%E0%A4%82+%E0%A4%95%E0%A5%87+%E0%A4%B8%E0%A4%82%E0%A4%B0%E0%A4%95%E0%A5%8D%E0%A4%B7%E0%A4%A3+%E0%A4%B8%E0%A4%82%E0%A4%AC%E0%A4%82%E0%A4%A7%E0%A5%80+%E0%A4%AE%E0%A4%BE%E0%A4%B8%E0%A5%8D%E0%A4%9F%E0%A4%B0+%E0%A4%AA%E0%A4%B0%E0%A4%BF%E0%A4%AA%E0%A4%A4%E0%A5%8D%E0%A4%B0%2C+2024+_+Master+Circular+on+Protection+of+Policyholders%27+interests+2024.pdf/2bc6a186-5c96-461b-2946-89945b9d488c?version=5.1&t=1737118636654&download=true",
+    "sha256": "2356489207c4959ef14206f3fd15a4415580cb35a6ade00f788777417de8b00e",
+    "bytes": 1999750,
+    "pages": 203,
+    "retrieved_date": "2026-11-05",
+    "status": "official_artifact_retrieved",
+    "applicability": "requires_review",
+    "note": "English-only attachment is 91,401,689 bytes; used official combined attachment within the 12MB research limit."
+  },
+  {
+    "id": "insurance-products-regulations-2024",
+    "listing_url": "https://egazette.gov.in/WriteReadData/2024/253325.pdf",
+    "official_url": "https://egazette.gov.in/WriteReadData/2024/253325.pdf",
+    "sha256": "9df3334ffcd9ba5c00618051c3bf25135e786e9cb38f75601f4af8edce19e395",
+    "bytes": 1095559,
+    "pages": 38,
+    "retrieved_date": "2026-11-05",
+    "status": "official_artifact_retrieved",
+    "applicability": "requires_review"
+  }
+]

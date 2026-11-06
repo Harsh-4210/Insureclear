@@ -14,8 +14,10 @@ from pathlib import Path
 # Allow running from project root
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from tools.regulatory_registry import load_registry
+from tools.document_context import retrieval_fingerprint
 from tools.pdf_reader import extract_text_from_pdf
-from tools.io_utils import create_output_dir, save_final_output
+from tools.io_utils import prepare_session, save_final_output
 from tools.llm_client import get_stats
 from tools.agent_validation import validate_agent_output
 from tools.evidence_validator import sanitize_unsupported_references, validate_appeal_letter
@@ -73,7 +75,7 @@ def run_pipeline(
         case_id: Unique ID for this case (used for checkpointing)
         denial_text: Pre-extracted denial text (skips PDF reading if provided)
         policy_text: Pre-extracted policy text (skips PDF reading if provided)
-        regulatory_text: Optional supplied regulatory/knowledge source text
+        regulatory_text: Optional unverified research lead; never authoritative evidence
 
     Returns:
         Dict with all outputs and the final appeal letter path
@@ -112,6 +114,8 @@ def run_pipeline(
     # Validate extracted text
     _validate_text(denial_text, "denial letter")
     _validate_text(policy_text, "policy document")
+    registry = load_registry()
+    prepare_session(case_id, denial_text, policy_text, regulatory_text, retrieval_fingerprint() + registry.fingerprint)
 
     # ── Agent 1: Auditor ──────────────────────────────────────────
     print("\n[Step 1/5] Auditor — Parsing documents...")
@@ -226,13 +230,15 @@ def run_pipeline(
     if revision_count > 0:
         print(f"\n  Total revisions: {revision_count}")
 
+    reviewed_letter = letter
+
     # Ground the final draft in the documents before it is written to disk.
     evidence_validation = validate_appeal_letter(
         letter,
         {
             "denial": denial_text,
             "policy": policy_text,
-            "regulatory": regulatory_text,
+            "regulatory": irdai_result.get("verified_source_context", ""),
         },
     )
     for evidence_attempt in range(2):
@@ -263,7 +269,7 @@ def run_pipeline(
             {
                 "denial": denial_text,
                 "policy": policy_text,
-                "regulatory": regulatory_text,
+                "regulatory": irdai_result.get("verified_source_context", ""),
             },
         )
         if corrected_validation.valid:
@@ -279,13 +285,31 @@ def run_pipeline(
             {
                 "denial": denial_text,
                 "policy": policy_text,
-                "regulatory": regulatory_text,
+                "regulatory": irdai_result.get("verified_source_context", ""),
             },
         )
         if sanitized_validation.valid:
             letter = sanitized_letter
             evidence_validation = sanitized_validation
             print("\n  Evidence sanitization: passed")
+    if letter != reviewed_letter:
+        # Evidence rewriting changes the draft after the quality revision loop.
+        # The final scorecard must assess the exact letter that will be saved.
+        from tools.io_utils import get_checkpoint_path, save_checkpoint, load_checkpoint
+        get_checkpoint_path(case_id, "judge").unlink(missing_ok=True)
+        writer_state = load_checkpoint(case_id, "appeal_writer") or {}
+        writer_state["letter"] = letter
+        save_checkpoint(case_id, "appeal_writer", writer_state)
+        emit("judge", "Judge is reviewing the evidence-corrected final letter", 98, "running")
+        with _timed("Final evidence review"):
+            judge_result = validate_agent_output(
+                "Judge", judge.run(letter, auditor_result, irdai_result, case_id)
+            )
+        score = judge_result.get("overall_score", 0)
+        recommendation = judge_result.get("recommendation", "REVISE")
+        if score < MIN_APPROVE_SCORE and recommendation == "APPROVE":
+            recommendation = "REVISE"
+
     if not evidence_validation.valid:
         print(
             f"\n  Evidence validation: {len(evidence_validation.issues)} "
@@ -297,11 +321,33 @@ def run_pipeline(
         print("\n  Evidence validation: passed")
         emit("evidence_validation", "Appeal grounded in supplied sources", 98, "done")
 
+    coverage_stages = {
+        "auditor": auditor_result.get("input_coverage", {}),
+        "policy_analyst": policy_result.get("input_coverage", {}),
+    }
+    input_coverage = {
+        "requires_manual_review": any(c.get("requires_manual_review", False) for c in coverage_stages.values()),
+        "stages": coverage_stages,
+    }
+    review_reasons = []
+    if regulatory_text:
+        review_reasons.append("Caller-supplied regulatory text is unverified and was excluded from authoritative evidence.")
+        if recommendation == "APPROVE":
+            recommendation = "REVIEW_REQUIRED"
+    if input_coverage["requires_manual_review"]:
+        review_reasons.append("Some source sections were omitted from agent context; review full documents.")
+        if recommendation == "APPROVE":
+            recommendation = "REVIEW_REQUIRED"
+
+    regulatory_evidence = irdai_result.get("regulatory_evidence", {})
+    if regulatory_evidence.get("requires_manual_review"):
+        review_reasons.append("Regulatory source provenance is verified; case-specific legal applicability needs human review.")
+        if recommendation == "APPROVE":
+            recommendation = "REVIEW_REQUIRED"
+
     # ── Assemble full report ──────────────────────────────────────
     pipeline_time = time.time() - pipeline_start
     llm_stats = get_stats()
-    output_dir = create_output_dir(case_id)
-
     full_report = {
         "case_id": case_id,
         "inputs": {
@@ -314,11 +360,9 @@ def run_pipeline(
         "judge": judge_result,
         "appeal_letter": letter,
         "evidence_validation": evidence_validation.as_dict(),
-        "artifacts": {
-            "output_dir": str(output_dir),
-            "appeal_letter_path": str(output_dir / "appeal_letter.txt"),
-            "full_report_path": str(output_dir / "full_report.json"),
-        },
+        "input_coverage": input_coverage,
+        "review_reasons": review_reasons,
+        "regulatory_evidence": regulatory_evidence,
         "pipeline_stats": {
             "total_time_seconds": round(pipeline_time, 2),
             "revision_count": revision_count,

@@ -400,6 +400,13 @@ function App() {
                   <strong>{typeof successProbability === 'string' ? successProbability : '—'}</strong>
                 </div>
 
+                {result?.review_reasons?.length > 0 && (
+                  <div className="detail-card wide" role="status">
+                    <h3>Human review needed</h3>
+                    {result.review_reasons.map((reason) => <p key={reason}>{reason}</p>)}
+                  </div>
+                )}
+
                 {result && (
                   <div className="detail-card wide">
                     <h3>Case snapshot</h3>
@@ -562,8 +569,8 @@ function App() {
 
             {isCompleted && (
               <div className="completion-banner">
-                <strong>Pipeline complete.</strong>
-                <span>Output saved in the backend and ready for download.</span>
+                <strong>{recommendation === 'REVIEW_REQUIRED' ? 'Draft ready for human review.' : 'Pipeline complete.'}</strong>
+                <span>Review the findings and source coverage before using the downloaded appeal.</span>
               </div>
             )}
           </section>

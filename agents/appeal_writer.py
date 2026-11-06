@@ -6,7 +6,10 @@ Written in formal Indian legal correspondence style.
 Supports revision based on Judge feedback.
 """
 
-from tools.llm_client import call_llm
+import hashlib
+import json
+from tools.document_context import ensure_prompt_budget, retrieval_fingerprint
+from tools.llm_client import call_llm, dispatch_padding
 from tools.io_utils import save_checkpoint, load_checkpoint
 
 SYSTEM_PROMPT = """
@@ -66,16 +69,10 @@ def run(
     Write the appeal letter.
     Returns the full letter as a string.
     """
-    cached = load_checkpoint(case_id, "appeal_writer")
-    if cached:
-        return cached.get("letter", "")
-
     print("\n[Appeal Writer] Drafting appeal letter...")
 
     # Gather strongest arguments
     counter_args = policy_analyst_output.get("strongest_counter_arguments", [])
-    legal_points = irdai_output.get("key_legal_points_for_appeal", [])
-    violations = irdai_output.get("potential_insurer_violations", [])
     docs_to_attach = irdai_output.get("what_documents_to_attach", [])
     posture = _valid_denial_posture(policy_analyst_output)
 
@@ -100,20 +97,22 @@ POLICY ANALYSIS FINDINGS:
 - Counter arguments: {counter_args}
 - Ambiguous policy wording: {policy_analyst_output.get('policy_wording_ambiguity')}
 
-IRDAI LEGAL POINTS:
-- Key legal points: {legal_points}
-- Potential violations by insurer: {violations}
+PINNED REGULATORY SOURCE EVIDENCE (interpretations require human review):
+{irdai_output.get("verified_source_context", "No pinned source excerpts supplied.")}
+
+Regulatory arguments may use only the pinned excerpts above; all case-specific
+interpretations require human review. Do not reproduce unsupported research leads.
 - Recommended appeal pathway: {irdai_output.get('appeal_pathway', {}).get('recommended_first_step')}
 
 DOCUMENTS TO ATTACH: {docs_to_attach}
 
-Write a complete, formal appeal letter. Structure it as:
+Write a complete, formal appeal letter under 450 words. Preserve all case identifiers. Structure it as:
 1. Header (date, addresses, subject line)
 2. Introduction — brief statement of the appeal
 3. Background — facts of the case
 4. Grounds for Appeal — numbered points, each citing specific clauses or IRDAI rules
 5. Relief Sought — specific ask
-6. Escalation Notice — mention Bima Bharosa and Ombudsman if not resolved in 15 days
+6. Escalation Notice — use only source-supported timelines; otherwise request the insurer's response and make escalation conditional on human review
 7. List of enclosures
 
 Use formal Indian correspondence style.
@@ -124,9 +123,17 @@ Write [POLICYHOLDER NAME], [DATE], [INSURER ADDRESS] as placeholders where infor
 {posture}
 """
 
-    letter = call_llm(prompt, system_prompt=SYSTEM_PROMPT, temperature=0.3)
+    ensure_prompt_budget(prompt, SYSTEM_PROMPT, 1200 + dispatch_padding())
+    context_hash = hashlib.sha256(json.dumps(
+        [auditor_output, policy_analyst_output, irdai_output, retrieval_fingerprint()],
+        sort_keys=True, ensure_ascii=False,
+    ).encode()).hexdigest()
+    cached = load_checkpoint(case_id, "appeal_writer")
+    if cached and cached.get("input_context_sha256") == context_hash:
+        return cached.get("letter", "")
+    letter = call_llm(prompt, system_prompt=SYSTEM_PROMPT, temperature=0.3, max_output_tokens=1200)
     letter = _enforce_valid_denial_posture(letter, policy_analyst_output, irdai_output)
-    save_checkpoint(case_id, "appeal_writer", {"letter": letter})
+    save_checkpoint(case_id, "appeal_writer", {"letter": letter, "input_context_sha256": context_hash})
     print("[Appeal Writer] ✓ Done")
     return letter
 
@@ -175,9 +182,16 @@ VERIFIED FACTS (use only these):
 - Policy Number: {auditor_output.get('policy_number')}
 - Claim Number: {auditor_output.get('claim_number')}
 - Denial reason: {auditor_output.get('denial_reason_verbatim')}
-- IRDAI legal points: {irdai_output.get('key_legal_points_for_appeal')}
+- Policyholder: {auditor_output.get('policyholder_name')}
+- Claim amount: {auditor_output.get('claim_amount')}
+- Hospital: {auditor_output.get('hospital_name')}
+- Treatment: {auditor_output.get('treatment_or_procedure')}
+- Denial date: {auditor_output.get('denial_date')}
 
-Rewrite the COMPLETE appeal letter with these fixes applied.
+PINNED REGULATORY SOURCE EVIDENCE (legal applicability requires human review):
+{irdai_output.get("verified_source_context", "No pinned source excerpts supplied.")}
+
+Rewrite the COMPLETE appeal letter under 450 words with these fixes applied. Preserve names, identifiers and amounts.
 Do NOT add any new facts that aren't in the verified facts above.
 Maintain formal Indian legal correspondence style.
 If the regulatory output contains conflict_metadata.regulatory_posture =
@@ -185,7 +199,8 @@ If the regulatory output contains conflict_metadata.regulatory_posture =
 turn regulatory leads into accusations.
 """
 
-    revised_letter = call_llm(prompt, system_prompt=SYSTEM_PROMPT, temperature=0.3)
+    ensure_prompt_budget(prompt, SYSTEM_PROMPT, 1200 + dispatch_padding())
+    revised_letter = call_llm(prompt, system_prompt=SYSTEM_PROMPT, temperature=0.3, max_output_tokens=1200)
     revised_letter = _enforce_valid_denial_posture(
         revised_letter,
         {"rejection_appears_valid": irdai_output.get("conflict_metadata", {}).get(
@@ -194,12 +209,15 @@ turn regulatory leads into accusations.
         irdai_output,
     )
 
+    writer_state = load_checkpoint(case_id, "appeal_writer") or {}
+    writer_state["letter"] = revised_letter
+
     # Save as revision checkpoint
     checkpoint_key = f"appeal_writer_v{revision_number + 1}"
-    save_checkpoint(case_id, checkpoint_key, {"letter": revised_letter})
+    save_checkpoint(case_id, checkpoint_key, writer_state)
 
     # Also update the main checkpoint
-    save_checkpoint(case_id, "appeal_writer", {"letter": revised_letter})
+    save_checkpoint(case_id, "appeal_writer", writer_state)
 
     print(f"[Appeal Writer] ✓ Revision #{revision_number} done")
     return revised_letter

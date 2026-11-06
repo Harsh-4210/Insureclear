@@ -5,7 +5,9 @@ sub-limits, co-pays, waiting periods, exclusions, network clauses.
 Tells the appeal whether the rejection was legitimately applied or not.
 """
 
-from tools.llm_client import call_llm_json
+import hashlib
+from tools.document_context import fit_document_prompt, source_marker, retrieval_fingerprint
+from tools.llm_client import call_llm_json, dispatch_padding
 from tools.irdai_knowledge import POLICY_RED_FLAGS
 from tools.io_utils import save_checkpoint, load_checkpoint
 
@@ -22,10 +24,6 @@ def run(policy_text: str, auditor_output: dict, case_id: str) -> dict:
     Analyse the policy document in the context of the specific denial.
     Returns findings about whether the rejection was legitimate.
     """
-    cached = load_checkpoint(case_id, "policy_analyst")
-    if cached:
-        return cached
-
     print("\n[Policy Analyst] Examining policy terms...")
 
     red_flags_context = "\n".join([
@@ -42,7 +40,7 @@ A claim has been denied with the following details:
 - Sum insured: {auditor_output.get('sum_insured')}
 
 === POLICY DOCUMENT ===
-{policy_text[:5000]}
+{source_marker("policy")}
 
 Analyse this policy in the context of this denial.
 
@@ -75,11 +73,22 @@ Return a JSON object:
 }}
 """
 
+    prompt, coverage = fit_document_prompt(
+        prompt, SYSTEM_PROMPT, {"policy": policy_text}, str(auditor_output), 1536, transport_reserve=dispatch_padding(True)
+    )
+    context_hash = hashlib.sha256((SYSTEM_PROMPT + prompt + retrieval_fingerprint()).encode()).hexdigest()
+    cached = load_checkpoint(case_id, "policy_analyst")
+    if cached and cached.get("input_context_sha256") == context_hash:
+        return cached
+
     result = call_llm_json(
         prompt,
         system_prompt=SYSTEM_PROMPT,
         max_output_tokens=1536,
     )
+    if isinstance(result, dict):
+        result["input_coverage"] = coverage
+        result["input_context_sha256"] = context_hash
     save_checkpoint(case_id, "policy_analyst", result)
     print("[Policy Analyst] ✓ Done")
     return result
