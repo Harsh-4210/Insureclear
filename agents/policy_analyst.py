@@ -10,12 +10,15 @@ from tools.document_context import fit_document_prompt, source_marker, retrieval
 from tools.llm_client import call_llm_json, dispatch_padding
 from tools.irdai_knowledge import POLICY_RED_FLAGS
 from tools.io_utils import save_checkpoint, load_checkpoint
+from tools.policy_evidence import annotate_policy_evidence
 
 SYSTEM_PROMPT = """
 You are a senior Indian health insurance policy analyst with 15 years of experience.
 You specialise in finding clauses that insurers use to reduce or reject claims,
 and identifying when those clauses have been wrongly applied.
-You know IRDAI regulations deeply.
+Analyze the contract only. Regulatory obligations are handled separately from pinned sources.
+Preserve every exception and negation: a waiting period except for accidents does
+not mean it applies only to accidents. Do not invent a legal obligation.
 """
 
 
@@ -43,6 +46,9 @@ A claim has been denied with the following details:
 {source_marker("policy")}
 
 Analyse this policy in the context of this denial.
+Include up to three exact policy excerpts supporting the main coverage/exclusion
+arguments. Include the whole relevant exception or negation, never a partial quote
+that reverses its meaning. If wording is absent, state uncertainty.
 
 Known policy red flags to look for:
 {red_flags_context}
@@ -67,6 +73,7 @@ Return a JSON object:
   "mis_selling_indicators": ["Any signs that the policy was sold without clearly disclosing these terms"],
   "rejection_appears_valid": true/false,
   "rejection_validity_explanation": "Clear explanation of whether the insurer's rejection seems legitimate or challengeable",
+  "policy_evidence": [{{"quote": "Exact policy substring, at most 600 characters", "clause": "Printed reference if present", "argument": "Case-specific interpretation requiring review"}}],
   "strongest_counter_arguments": [
     "List the strongest arguments the policyholder can make against this rejection"
   ]
@@ -87,6 +94,7 @@ Return a JSON object:
         max_output_tokens=1536,
     )
     if isinstance(result, dict):
+        result = annotate_policy_evidence(result, policy_text)
         result["input_coverage"] = coverage
         result["input_context_sha256"] = context_hash
     save_checkpoint(case_id, "policy_analyst", result)

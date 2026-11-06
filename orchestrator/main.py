@@ -14,6 +14,7 @@ from pathlib import Path
 # Allow running from project root
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from tools.policy_evidence import annotate_policy_evidence
 from tools.regulatory_registry import load_registry
 from tools.document_context import retrieval_fingerprint
 from tools.pdf_reader import extract_text_from_pdf
@@ -115,7 +116,7 @@ def run_pipeline(
     _validate_text(denial_text, "denial letter")
     _validate_text(policy_text, "policy document")
     registry = load_registry()
-    prepare_session(case_id, denial_text, policy_text, regulatory_text, retrieval_fingerprint() + registry.fingerprint)
+    prepare_session(case_id, denial_text, policy_text, regulatory_text, retrieval_fingerprint() + registry.fingerprint + ":policy-evidence-1:quality-2")
 
     # ── Agent 1: Auditor ──────────────────────────────────────────
     print("\n[Step 1/5] Auditor — Parsing documents...")
@@ -136,6 +137,7 @@ def run_pipeline(
     with _timed("Policy Analyst") as t2:
         policy_result = policy_analyst.run(policy_text, auditor_result, case_id)
         policy_result = validate_agent_output("Policy Analyst", policy_result)
+        policy_result = annotate_policy_evidence(policy_result, policy_text)
 
     valid = policy_result.get("rejection_appears_valid")
     print(f"\n  Rejection legitimacy: {'⚠️  Appears valid' if valid else '✓ Challengeable'}")
@@ -146,6 +148,7 @@ def run_pipeline(
     with _timed("IRDAI Checker") as t3:
         irdai_result = irdai_checker.run(auditor_result, policy_result, case_id)
         irdai_result = validate_agent_output("IRDAI Checker", irdai_result)
+        irdai_result["verified_policy_context"] = policy_result.get("verified_policy_context", "")
 
     pathway = irdai_result.get("appeal_pathway", {})
     print(f"\n  Recommended appeal: {pathway.get('recommended_first_step')}")
@@ -329,7 +332,9 @@ def run_pipeline(
         "requires_manual_review": any(c.get("requires_manual_review", False) for c in coverage_stages.values()),
         "stages": coverage_stages,
     }
-    review_reasons = []
+    review_reasons = list(policy_result.get("policy_review_reasons", []))
+    if review_reasons and recommendation == "APPROVE":
+        recommendation = "REVIEW_REQUIRED"
     if regulatory_text:
         review_reasons.append("Caller-supplied regulatory text is unverified and was excluded from authoritative evidence.")
         if recommendation == "APPROVE":
@@ -354,12 +359,15 @@ def run_pipeline(
             "denial_pdf": denial_pdf,
             "policy_pdf": policy_pdf,
         },
+        "source_evidence": {"denial": denial_text, "policy": policy_text, "regulatory": irdai_result.get("verified_source_context", "")},
+        "policy_evidence": policy_result.get("policy_evidence", []),
         "auditor": auditor_result,
         "policy_analyst": policy_result,
         "irdai_checker": irdai_result,
         "judge": judge_result,
         "appeal_letter": letter,
         "evidence_validation": evidence_validation.as_dict(),
+        "quality_issues": ([{"type": "policy_evidence_missing", "message": reason} for reason in policy_result.get("policy_review_reasons", [])] + [{"type": issue.category, "value": issue.value, "message": issue.message} for issue in evidence_validation.issues]),
         "input_coverage": input_coverage,
         "review_reasons": review_reasons,
         "regulatory_evidence": regulatory_evidence,

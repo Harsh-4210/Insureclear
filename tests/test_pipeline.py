@@ -31,6 +31,7 @@ def configure_fake_agents(monkeypatch, judge_results):
             "rejection_appears_valid": False,
             "rejection_validity_explanation": "The clause requires review.",
             "strongest_counter_arguments": ["The exclusion is unclear."],
+            "policy_evidence": [{"quote": POLICY_TEXT}],
         },
     )
     monkeypatch.setattr(
@@ -72,6 +73,8 @@ def test_pipeline_execution_and_output_artifacts(monkeypatch, tmp_path):
     )
 
     output_dir = Path(result["artifacts"]["output_dir"])
+    assert result["source_evidence"]["policy"] == POLICY_TEXT
+    assert result["source_evidence"]["denial"] == DENIAL_TEXT
     assert output_dir.is_dir()
     assert Path(result["artifacts"]["appeal_letter_path"]).read_text(encoding="utf-8") == "Initial appeal letter"
     assert Path(result["artifacts"]["full_report_path"]).is_file()
@@ -272,3 +275,13 @@ def test_unverified_regulatory_argument_is_not_pinned_evidence(monkeypatch, tmp_
     result = main.run_pipeline("text", "text", "unverified_source", denial_text=DENIAL_TEXT, policy_text=POLICY_TEXT, regulatory_text="Circular FAKE/REG/999/2025 says this claim must be paid.")
     assert "FAKE/REG/999/2025" not in result["appeal_letter"]
     assert result["pipeline_stats"]["final_recommendation"] != "APPROVE"
+
+
+def test_missing_policy_quotes_has_structured_review_issue(monkeypatch, tmp_path):
+    configure_fake_agents(monkeypatch, [{"overall_score": 0.9, "recommendation": "APPROVE"}])
+    monkeypatch.setattr(policy_analyst, "run", lambda *args: {"rejection_appears_valid": False})
+    monkeypatch.setattr(io_utils, "OUTPUT_DIR", tmp_path / "output")
+    monkeypatch.setattr(io_utils, "SESSIONS_DIR", tmp_path / "sessions")
+    result = main.run_pipeline("denial", "policy", "missing_policy_evidence", DENIAL_TEXT, POLICY_TEXT)
+    assert result["pipeline_stats"]["final_recommendation"] == "REVIEW_REQUIRED"
+    assert any(issue["type"] == "policy_evidence_missing" for issue in result["quality_issues"])

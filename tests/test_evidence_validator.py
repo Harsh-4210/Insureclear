@@ -153,3 +153,24 @@ def test_explicit_regulatory_clause_binding_covers_later_references_without_cros
 def test_committee_acronyms_are_not_fabricated_reference_ids():
     result = validate_appeal_letter("Please confirm CRC/PMC approval.", {"denial": "A claim was denied.", "regulatory": "Claims Review Committee (CRC) and Product Management Committee (PMC)."})
     assert result.valid
+
+
+def test_response_deadline_is_not_supported_by_unrelated_waiting_period():
+    result = validate_appeal_letter("Please settle this claim within 15 working days.", {"policy": "A waiting period of 15 days applies to new policies."})
+    assert not result.valid
+    assert any(issue.category == "unsupported_deadline" for issue in result.issues)
+
+
+def test_unicode_and_spelled_deadlines_require_source_support():
+    for letter in ["Please reply within 15\u202fcalendar days.", "We will escalate after fifteen days.", "Please provide a 15-day response."]:
+        assert any(issue.category == "unsupported_deadline" for issue in validate_appeal_letter(letter, {"policy": "Hospital treatment is covered."}).issues)
+    assert validate_appeal_letter("Please reply within 15 calendar days.", {"regulatory": "The insurer shall reply within 15 calendar days."}).valid
+
+
+def test_unsupported_clause_sanitizing_does_not_invent_policy_authority():
+    letter = "Clause 99 obliges settlement of every claim. Please review the supplied documents."
+    result = validate_appeal_letter(letter, {"policy": "Treatment benefits apply subject to policy terms."})
+    cleaned = sanitize_unsupported_references(letter, result)
+    assert "applicable policy provision" not in cleaned
+    assert "obliges settlement" not in cleaned
+    assert "Please review" in cleaned

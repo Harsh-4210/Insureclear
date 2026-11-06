@@ -93,3 +93,18 @@ def test_direct_writer_cache_binds_case_facts_and_regulatory_evidence(monkeypatc
     assert appeal_writer.run({"policyholder_name": "First Holder"}, {}, regulatory, "direct_writer_cache") == first
     changed = appeal_writer.run({"policyholder_name": "Second Holder"}, {}, regulatory, "direct_writer_cache")
     assert changed == "Second claimant draft"
+
+
+def test_writer_judge_and_revision_share_verified_policy_wording(monkeypatch, tmp_path):
+    monkeypatch.setattr(io_utils, "SESSIONS_DIR", tmp_path / "sessions")
+    quote = "Section 1.2: Day-care chemotherapy is covered without a 24-hour admission."
+    evidence = evidence_result()
+    evidence["verified_policy_context"] = quote
+    prompts = []
+    monkeypatch.setattr(appeal_writer, "call_llm", lambda prompt, **kwargs: prompts.append(prompt) or "Please review the claim.")
+    monkeypatch.setattr(judge, "call_llm_json", lambda prompt, **kwargs: prompts.append(prompt) or {"overall_score": 0.9, "recommendation": "APPROVE"})
+    appeal_writer.run({}, {"verified_policy_context": quote}, evidence, "policy_writer")
+    appeal_writer.revise("Original letter", {}, {}, evidence, "policy_revision")
+    judge.run("Final letter", {}, evidence, "policy_judge")
+    assert len(prompts) == 3 and all(quote in prompt for prompt in prompts)
+    assert all("already supplied" in prompt for prompt in prompts)

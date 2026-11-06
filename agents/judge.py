@@ -54,6 +54,11 @@ Review this insurance appeal letter against the source facts.
 - Denial date: {auditor_output.get('denial_date')}
 No generated legal research or estimated success probability is a verified fact.
 
+=== VERIFIED POLICY WORDING ===
+{irdai_output.get("verified_policy_context", "No verified policy quotes supplied.")}
+Check the main contractual argument and every exception against this wording.
+Do not request wording already supplied. Flag unsupported numeric response deadlines.
+
 === PINNED REGULATORY SOURCE EVIDENCE ===
 {irdai_output.get("verified_source_context", "No pinned source excerpts supplied.")}
 Source provenance does not establish legal applicability. Verify interpretations

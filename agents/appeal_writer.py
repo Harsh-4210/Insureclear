@@ -22,6 +22,8 @@ Your letters are:
 - Factual — no emotional language, just legal and clinical arguments
 - Structured — clearly organised with numbered points
 - Careful — unsupported legal claims are worse than a clearly labelled argument
+Never invent a numeric response/escalation deadline, including a requested 15-day
+period. Only include a timing promise when its exact source evidence is supplied.
 You write for Indian insurers, citing IRDAI rules, not US/UK law.
 """
 
@@ -91,6 +93,11 @@ CLAIM FACTS:
 - Insurer's Stated Reason: {auditor_output.get('denial_reason_verbatim')}
 - Clause Cited by Insurer: {auditor_output.get('policy_clause_cited')}
 
+VERIFIED POLICY WORDING (exact original excerpts; interpretations require review):
+{policy_analyst_output.get("verified_policy_context", irdai_output.get("verified_policy_context", "No verified policy quotes supplied."))}
+Do not ask for wording already supplied. Use the supplied exception and negation
+without reversing its meaning; generated findings are interpretations, not quotations.
+
 POLICY ANALYSIS FINDINGS:
 - Rejection appears valid: {policy_analyst_output.get('rejection_appears_valid')}
 - Explanation: {policy_analyst_output.get('rejection_validity_explanation')}
@@ -125,7 +132,7 @@ Write [POLICYHOLDER NAME], [DATE], [INSURER ADDRESS] as placeholders where infor
 
     ensure_prompt_budget(prompt, SYSTEM_PROMPT, 1200 + dispatch_padding())
     context_hash = hashlib.sha256(json.dumps(
-        [auditor_output, policy_analyst_output, irdai_output, retrieval_fingerprint()],
+        [SYSTEM_PROMPT, prompt, auditor_output, policy_analyst_output, irdai_output, retrieval_fingerprint()],
         sort_keys=True, ensure_ascii=False,
     ).encode()).hexdigest()
     cached = load_checkpoint(case_id, "appeal_writer")
@@ -187,6 +194,10 @@ VERIFIED FACTS (use only these):
 - Hospital: {auditor_output.get('hospital_name')}
 - Treatment: {auditor_output.get('treatment_or_procedure')}
 - Denial date: {auditor_output.get('denial_date')}
+
+VERIFIED POLICY WORDING:
+{irdai_output.get("verified_policy_context", "No verified policy quotes supplied.")}
+Do not request wording already supplied or reverse an exception or negation.
 
 PINNED REGULATORY SOURCE EVIDENCE (legal applicability requires human review):
 {irdai_output.get("verified_source_context", "No pinned source excerpts supplied.")}

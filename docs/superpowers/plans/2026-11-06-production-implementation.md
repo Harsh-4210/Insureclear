@@ -96,16 +96,16 @@ Serve private-pilot claimant users and trained reviewers. A completed model job 
 ### T01: Source-bound policy evidence (controller)
 **Files:** new `tools/policy_evidence.py`, `tests/test_policy_evidence.py`; modify Policy Analyst, pipeline and corresponding tests.
 **Interfaces:** `annotate_policy_evidence(result:dict,policy_text:str)->dict` verifies `policy_evidence:[{quote,clause,argument}]`, records exact offsets, returns `verified_policy_context` and `policy_review_reasons`. Report retains private `source_evidence` snapshots. Invalid quotes are never verified.
-- [ ] Write `test_quote_offsets_match_policy`, `test_fabricated_quote_requires_review`, accident-exception/negation tests and pipeline snapshot/review tests; run focused pytest and observe intended RED.
-- [ ] Request contract-only exact evidence, annotate original slices, preserve source snapshots and cap approval for missing evidence. Keep result compatibility and budget guards; invalidate changed prompts/caches.
-- [ ] Focused/full suites GREEN; record evidence and commit `fix: ground policy arguments in exact source evidence`.
+- [x] Write `test_quote_offsets_match_policy`, `test_fabricated_quote_requires_review`, accident-exception/negation tests and pipeline snapshot/review tests; run focused pytest and observe intended RED.
+- [x] Request contract-only exact evidence, annotate original slices, preserve source snapshots and cap approval for missing evidence. Keep result compatibility and budget guards; invalidate changed prompts/caches.
+- [x] Focused/full suites GREEN; record evidence and commit `fix: ground policy arguments in exact source evidence`.
 
 ### T02: Grounded writing and deadline checks (controller)
 **Files:** Writer, Judge, evidence validator and prompt/pipeline/evidence tests.
 **Interfaces:** shared `verified_policy_context` and structured quality issues in existing dictionaries; any optional Judge argument preserves compatibility. Validator emits `unsupported_deadline` for unsupported numeric response/escalation promises.
-- [ ] Reproduce supplied-wording omission, accident-exception inversion and unsourced 15-day request as deterministic prompt/validator regressions; observe RED. A mocked model is not proof of semantic accuracy.
-- [ ] Give Writer/Judge/revisions exact policy evidence; distinguish contract from legal leads; prohibit requests for already supplied text. Reject unsupported deadlines; remove/flag unsupported claims without false policy attribution.
-- [ ] Focused/full suite GREEN; retain human review/failed live history; commit `fix: reject unsupported deadlines and preserve policy grounding`.
+- [x] Reproduce supplied-wording omission, accident-exception inversion and unsourced 15-day request as deterministic prompt/validator regressions; observe RED. A mocked model is not proof of semantic accuracy.
+- [x] Give Writer/Judge/revisions exact policy evidence; distinguish contract from legal leads; prohibit requests for already supplied text. Reject unsupported deadlines; remove/flag unsupported claims without false policy attribution.
+- [x] Focused/full suite GREEN; retain human review/failed live history; commit `fix: reject unsupported deadlines and preserve policy grounding`.
 **Exit:** reproducible safeguards pass; expert/live semantic evaluation remains required.
 
 ## Phase 2 — Named users and case isolation
@@ -208,7 +208,7 @@ Serve private-pilot claimant users and trained reviewers. A completed model job 
 | Task | Status | Evidence / dependency |
 |---|---|---|
 | T00 | complete | 120 tests; baseline caed8d4; builder findings resolved; plan commit in Git history |
-| T01–T02 | pending | quality/source evidence |
+| T01–T02 | complete locally | 129 pipeline/evidence tests passed; semantic/live acceptance remains T10 |
 | T03–T04 | pending | accounts/ownership |
 | T05–T07 | pending | review store/API/frontend |
 | T08 | pending | private lifecycle/operations |

@@ -166,6 +166,21 @@ def _present(value: str, source: str) -> bool:
     return False
 
 
+_DEADLINE_CONTEXT = re.compile(r"\b(?:respond|response|reply|settle|settlement|payment|pay|resolve|resolution|escalat\w*|confirmation)\b", re.I)
+_DEADLINE_COUNT = re.compile(r"\b(\d+|one|two|three|five|seven|ten|fifteen|thirty|sixty|ninety)[\s\-\u2010-\u2015]*(?:(working|business|calendar)\s+)?(days?|weeks?|hours?)\b", re.I)
+_COUNT_WORDS = dict(one=1, two=2, three=3, five=5, seven=7, ten=10, fifteen=15, thirty=30, sixty=60, ninety=90)
+
+
+def _deadline_spans(text):
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", text):
+        if not _DEADLINE_CONTEXT.search(sentence):
+            continue
+        for match in _DEADLINE_COUNT.finditer(sentence):
+            count, kind, unit = match.groups()
+            number = int(count) if count.isdecimal() else _COUNT_WORDS[count.lower()]
+            yield match.group(), (number, "working" if (kind or "").lower() in {"business", "working"} else (kind or "").lower(), unit.lower().rstrip("s"))
+
+
 def sanitize_unsupported_references(
     letter: str, validation: EvidenceValidation
 ) -> str:
@@ -173,13 +188,16 @@ def sanitize_unsupported_references(
     sanitized = letter
     replacements = {
         "unsupported_id": "the cited reference",
-        "unsupported_clause": "the applicable policy provision",
         "unsupported_medical_claim": (
             "The supplied documents do not establish this medical assertion"
         ),
         "invented_case_law": "the cited legal authority",
     }
     for issue in validation.issues:
+        if issue.category in {"unsupported_clause", "unsupported_deadline", "invented_case_law"} and issue.value:
+            parts = re.split(r"(?<=[.!?])\s+|\n+", sanitized)
+            sanitized = "\n".join("[Unsupported statement removed; review the source wording.]" if issue.value in part else part for part in parts)
+            continue
         replacement = replacements.get(issue.category)
         if replacement and issue.value:
             sanitized = sanitized.replace(issue.value, replacement)
@@ -218,8 +236,10 @@ def validate_appeal_letter(
             EvidenceIssue("missing_sources", "", "No denial, policy, or regulatory source text supplied")
         ])
 
+    supported_deadlines = {key for _, key in _deadline_spans(source_text)}
+    deadline_issues = [EvidenceIssue("unsupported_deadline", value, "Numeric response or escalation deadline lacks matching source context") for value, key in _deadline_spans(letter) if key not in supported_deadlines]
     case_text = "\n".join(str((sources or {}).get(key) or "") for key in ("denial", "policy"))
-    issues: list[EvidenceIssue] = []
+    issues: list[EvidenceIssue] = deadline_issues
     for value in _ID.findall(letter):
         patient_id = bool(re.match(r"(?:policy|claim|case|member|certificate|customer|UHID)\b", value, re.I))
         _add_missing(issues, "unsupported_id", [value], case_text if patient_id else source_text)
