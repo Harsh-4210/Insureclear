@@ -16,6 +16,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "jobs.sqlite3"
 
 
+class QueueFull(ValueError):
+    pass
+
+
 class JobStore:
     """Persist queued and completed jobs so API restarts do not lose state."""
 
@@ -92,6 +96,7 @@ class JobStore:
     def recover_running(self) -> None:
         """Recover orphaned jobs after obtaining the exclusive worker lock."""
         with self._lock, self._connect() as connection:
+            connection.execute("UPDATE jobs SET status='cancelled',stage='cancelled',message='Cancelled during restart',updated_at=? WHERE status='cancellation_requested'", (self._now(),))
             connection.execute(
                 "UPDATE jobs SET status = 'queued', stage = 'queued', "
                 "message = 'Recovered after restart', updated_at = ? WHERE status = 'running'",
@@ -105,6 +110,16 @@ class JobStore:
     def create(self, job_id: str, payload: dict[str, Any], mode: str, case_id: str, fresh_run: bool, owner_id: str | None = None, org_id: str | None = None, case_label: str | None = None) -> None:
         now = self._now()
         with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            maximum = int(os.getenv("INSURECLEAR_MAX_PENDING_JOBS", "100"))
+            per_owner = int(os.getenv("INSURECLEAR_MAX_PENDING_PER_USER", "3"))
+            if maximum < 1 or per_owner < 1:
+                raise ValueError("Queue limits must be positive")
+            pending = "status IN ('queued','running','cancellation_requested')"
+            if connection.execute(f"SELECT COUNT(*) FROM jobs WHERE {pending}").fetchone()[0] >= maximum:
+                raise QueueFull("Queue admission limit reached")
+            if owner_id and connection.execute(f"SELECT COUNT(*) FROM jobs WHERE {pending} AND org_id=? AND owner_id=?", (org_id, owner_id)).fetchone()[0] >= per_owner:
+                raise QueueFull("Account pending-case limit reached")
             connection.execute(
                 """
                 INSERT INTO jobs (
@@ -129,7 +144,7 @@ class JobStore:
         else:
             where, values = "org_id = ? AND owner_id = ?", (principal["org_id"], principal["user_id"])
         with self._connect() as db:
-            return [dict(row) for row in db.execute(f"SELECT {columns} FROM jobs WHERE {where} ORDER BY created_at DESC LIMIT 200", values)]
+            return [dict(row) for row in db.execute(f"SELECT {columns} FROM jobs WHERE ({where}) AND status != 'deleting' ORDER BY created_at DESC LIMIT 200", values)]
 
     def get_payload(self, job_id: str) -> dict | None:
         with self._connect() as db:
@@ -154,6 +169,49 @@ class JobStore:
         values.append(job_id)
         with self._lock, self._connect() as connection:
             connection.execute(f"UPDATE jobs SET {', '.join(assignments)} WHERE id = ?", values)
+
+    def complete(self, job_id: str, result: dict) -> bool:
+        """Completion and cancellation contend for the same durable write lock."""
+        with self._lock, self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if not row:
+                return False
+            if row[0] == "cancellation_requested":
+                db.execute("UPDATE jobs SET status='cancelled',stage='cancelled',message='Cancelled',updated_at=? WHERE id=?", (self._now(), job_id))
+                return False
+            if row[0] != "running":
+                return False
+            db.execute("UPDATE jobs SET status='completed',stage='complete',progress=100,message='Pipeline complete',result_json=?,error=NULL,traceback=NULL,updated_at=? WHERE id=?", (json.dumps(result), self._now(), job_id))
+            return True
+
+    def cancel(self, job_id: str) -> str:
+        with self._lock, self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if not row:
+                raise ValueError("Unknown job")
+            status = {"queued": "cancelled", "running": "cancellation_requested"}.get(row[0], row[0])
+            db.execute("UPDATE jobs SET status=?,stage=?,message=?,updated_at=? WHERE id=?", (status, status, "Cancellation requested" if status == "cancellation_requested" else "Job cancelled" if status == "cancelled" else "Job unchanged", self._now(), job_id))
+            return status
+
+    def begin_delete(self, job_id: str) -> dict:
+        with self._lock, self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if not row:
+                raise ValueError("Unknown job")
+            if row["status"] in {"running", "cancellation_requested"}:
+                raise ValueError("Cannot delete active work")
+            snapshot = self._row_to_job(row)
+            snapshot["payload"] = json.loads(row["payload_json"])
+            db.execute("UPDATE jobs SET status='deleting',stage='deleting',message='Deleting private records',updated_at=? WHERE id=?", (self._now(), job_id))
+            return snapshot
+
+    def finish_delete(self, job_id: str) -> None:
+        with self._lock, self._connect() as db:
+            db.execute("PRAGMA secure_delete=ON")
+            db.execute("DELETE FROM jobs WHERE id=? AND status='deleting'", (job_id,))
 
     def claim_next(self) -> tuple[str, dict[str, Any]] | None:
         with self._lock, self._connect() as connection:

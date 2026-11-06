@@ -318,7 +318,7 @@ def call_llm(
                 print(f"[llm] Rate limit hit. Waiting {wait}s before retry {attempt}/{max_retries}...")
                 time.sleep(wait)
             elif attempt < max_retries:
-                print(f"[llm] Error: {e}. Retrying ({attempt}/{max_retries})...")
+                print(f"[llm] Error type: {type(e).__name__}. Retrying ({attempt}/{max_retries})...")
                 time.sleep(2)
             else:
                 raise RuntimeError(f"LLM call failed after {max_retries} attempts: {e}")

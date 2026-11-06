@@ -151,11 +151,11 @@ Serve private-pilot claimant users and trained reviewers. A completed model job 
 
 ### T08: Lifecycle, retention and operations (controller; T04,T06)
 **Files:** API/JobStore, new `tools/case_lifecycle.py`, `tools/retention.py`, `tools/runtime_control.py`, pipeline telemetry helpers/tests; deployment/env docs.
-**Interfaces:** cancel flag and `POST /api/jobs/{id}/cancel`: queued -> cancelled; running -> cancellation_requested, checked at stage boundaries. `DELETE /api/jobs/{id}` rejects active work, safely races against claims, confines filesystem cleanup to verified roots. Retention CLI `--days N` lists eligible terminal cases by server time; `--apply` explicitly deletes, never active cases. `/ready` checks DB/corpus/provider configuration without inference; `/health` liveness. Request ID header, safe operational errors, authenticated content-free queue metrics. Configure queue ceiling/per-principal admission; 429 includes Retry-After.
-- [ ] RED cancellation-before-provider, running deletion refusal, queued claim/delete race, traversal/symlink cleanup refusal, retention dry-run/no active deletion, expiry boundary tests.
-- [ ] RED per-case provider delta, stage duration, request ID, readiness failure, private-error redaction and admission-ceiling tests.
-- [ ] Implement minimal safe controls, cooperative time/cancel boundary semantics, source-free logs and deployment docs. Do not claim immediate interruption of synchronous provider/OCR work, disk encryption or backup erasure.
-- [ ] Focused/full tests GREEN; commit separate lifecycle/telemetry patches. Record external filesystem ACL/encryption/backup/residency/consent obligations.
+**Interfaces:** cancel flag and `POST /api/jobs/{id}/cancel`: queued -> cancelled; running -> cancellation_requested, checked at stage boundaries. `DELETE /api/jobs/{id}` rejects active work, safely races against claims, confines filesystem cleanup to verified roots. Retention CLI `--days N` lists eligible terminal cases by server time; `--apply` explicitly deletes, never active cases. `/ready` checks DB/corpus/provider configuration without inference; `/health` liveness. Request ID header, safe operational errors, authenticated content-free queue metrics. Configure queue ceiling/per-principal admission; 429 includes Retry-After. Digital PDFs max 200 pages, OCR max 40, extracted text max 500000 characters; render one page at a time with max long edge 2500 pixels and 30-second raster/Tesseract timeouts. Explicitly fail over-limit inputs; do not silently truncate.
+- [x] RED cancellation-before-provider, running deletion refusal, queued claim/delete race, traversal/symlink cleanup refusal, retention dry-run/no active deletion, expiry boundary tests.
+- [x] RED per-case provider delta, stage duration, request ID, readiness failure, private-error redaction and admission-ceiling tests.
+- [x] Implement minimal safe controls, cooperative time/cancel boundary semantics, source-free logs and deployment docs. Do not claim immediate interruption of synchronous provider/OCR work, disk encryption or backup erasure.
+- [x] Focused/full tests GREEN; commit separate lifecycle/telemetry patches. Record external filesystem ACL/encryption/backup/residency/consent obligations.
 
 ## Phase 5 — Corpus maintenance and meaningful evaluation
 
@@ -214,7 +214,7 @@ Serve private-pilot claimant users and trained reviewers. A completed model job 
 | T05 | complete module | 30 review transaction tests |
 | T06 | complete locally | version/source-bound API; approval race regression fixed |
 | T07 | in progress | frontend module agent |
-| T08 | pending | private lifecycle/operations |
+| T08 | complete locally | 245 passed/1 Windows symlink skip; PDF bounds added; deployment checks remain open |
 | T09 | pending | audit code; legal sign-off external |
 | T10 | pending | offline CI; live/representative acceptance separate |
 | T11 | pending | independent review/build/performance |

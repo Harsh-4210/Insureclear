@@ -83,7 +83,11 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`.
+Open `http://localhost:5173`. The browser uses named accounts, not a bundled API
+key. Follow [pilot operations](docs/PILOT_OPERATIONS.md) to provision an invite-only
+account and exact allowed Origin. For explicit localhost HTTP development set
+`INSURECLEAR_AUTH_COOKIE_SECURE=false`; keep Secure cookies for HTTPS deployment.
+Account mode must be enabled with a private auth DB; no default account exists.
 
 The interface provides:
 
@@ -234,11 +238,13 @@ explicitly rather than bypassing the bound.
 
 ### Privacy boundary
 
-- API access can require `X-API-Key` authentication.
+- Account-mode browser access uses revocable HttpOnly sessions and owner/org authorization.
+- Cookie mutations require an exact allowed Origin and session-bound CSRF token.
 - Upload and text size limits are configurable.
 - PDF signatures and content types are validated.
 - Uploaded PDFs are deleted after processing.
-- Job state is stored separately from source documents.
+- Private job payloads and reports retain source text/snapshots for review; protect and expire them.
+- Human approvals are versioned separately from the model score; edits invalidate approval.
 - Do not commit `.env`, claim documents, or generated personal data.
 
 ---
@@ -313,11 +319,25 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and
 
 ## API Surface
 
-All protected endpoints accept `X-API-Key` when authentication is enabled.
+The pilot uses named-account cookies, exact Origin/CSRF checks for mutations, and
+owner/organization authorization on every case route. `X-API-Key` is accepted only
+in explicitly configured trusted-local legacy mode; it cannot bypass account mode.
+See [operator setup](docs/PILOT_OPERATIONS.md) and the
+[phased implementation plan](docs/superpowers/plans/2026-11-06-production-implementation.md).
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| `GET` | `/health` | Service health check |
+| `GET` | `/health` | Process liveness |
+| `GET` | `/ready` | Local dependency/config readiness, without paid inference |
+| `POST` | `/api/auth/login` | Invite-only account login |
+| `GET` | `/api/auth/session` | Current public identity and CSRF token |
+| `POST` | `/api/auth/logout` | Revoke current session |
+| `GET` | `/api/jobs` | Authorized case list |
+| `GET/PUT` | `/api/jobs/{job_id}/review` | Read history/save an immutable draft revision |
+| `POST` | `/api/jobs/{job_id}/review/decision` | Reviewer approves or requests changes |
+| `GET` | `/api/jobs/{job_id}/download/approved-letter` | Exact currently approved version |
+| `POST` | `/api/jobs/{job_id}/cancel` | Cooperative owner/admin cancellation |
+| `DELETE` | `/api/jobs/{job_id}` | Owner/admin confined private-case cleanup |
 | `POST` | `/api/analyze` | Queue a demo, text, or PDF analysis |
 | `GET` | `/api/jobs/{job_id}` | Read job status and progress |
 | `GET` | `/api/jobs/{job_id}/letter` | Return appeal text |
@@ -326,7 +346,7 @@ All protected endpoints accept `X-API-Key` when authentication is enabled.
 | `GET` | `/api/jobs/{job_id}/download/report` | Download `full_report.json` |
 
 <details>
-<summary><b>Example API submission</b></summary>
+<summary><b>Trusted-local legacy API example</b></summary>
 <br />
 
 ```bash
@@ -335,7 +355,7 @@ curl -X POST http://localhost:8000/api/analyze \
   -F "case_id=demo_case"
 ```
 
-With authentication:
+With legacy shared-key authentication (not browser account mode):
 
 ```bash
 curl -H "X-API-Key: $INSURECLEAR_API_KEY" \

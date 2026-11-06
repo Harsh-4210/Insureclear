@@ -73,3 +73,12 @@ def test_approval_cannot_validate_one_version_then_approve_a_different_one(acces
     monkeypatch.setattr(reviews, "state_for", racing_state)
     response = clients["reviewer"].post(f"/api/jobs/{job_id}/review/decision", json={"expected_version": 2, "decision": "approved", "checks": CHECKS})
     assert response.status_code == 409
+
+
+def test_original_validation_failure_requires_explicit_human_revision(access):
+    store, clients, job_id = completed(access)
+    report = store.get(job_id)["result"]
+    report["evidence_validation"] = {"valid": False, "errors": [{"category": "historic_failure"}]}
+    store.update(job_id, result=report)
+    response = clients["reviewer"].post(f"/api/jobs/{job_id}/review/decision", json={"expected_version": 1, "decision": "approved", "checks": CHECKS})
+    assert response.status_code == 422

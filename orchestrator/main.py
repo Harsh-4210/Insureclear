@@ -8,6 +8,8 @@ timing, validation, and assembles the final output package.
 import sys
 import time
 import json
+from contextlib import contextmanager
+from tools.runtime_control import RuntimeControl, usage_delta
 from typing import Callable, Any
 from pathlib import Path
 
@@ -66,6 +68,7 @@ def run_pipeline(
     policy_text: str = None,
     progress_callback: ProgressCallback | None = None,
     regulatory_text: str = None,
+    control: Callable[[], None] | None = None,
 ) -> dict:
     """
     Full pipeline: PDF inputs → appeal letter + scorecard.
@@ -82,8 +85,22 @@ def run_pipeline(
         Dict with all outputs and the final appeal letter path
     """
     pipeline_start = time.time()
+    stats_start = get_stats()
+    runtime = RuntimeControl(stats=get_stats, initial=stats_start)
+    check_control = control or runtime.check
+    stage_durations = {}
+
+    @contextmanager
+    def stage_timer(label):
+        timer = _timed(label)
+        try:
+            with timer:
+                yield timer
+        finally:
+            stage_durations[label] = round(timer.elapsed, 3)
 
     def emit(stage: str, message: str, percent: int | None = None, state: str | None = None) -> None:
+        check_control()
         if progress_callback:
             progress_callback({
                 "stage": stage,
@@ -103,11 +120,11 @@ def run_pipeline(
     if not denial_text or not policy_text:
         print("\n[Step 0] Reading PDF documents...")
         emit("extracting", "Extracting text from uploaded documents", 5, "running")
-        with _timed("PDF extraction"):
+        with stage_timer("PDF extraction"):
             if not denial_text:
-                denial_text = extract_text_from_pdf(denial_pdf)
+                denial_text = extract_text_from_pdf(denial_pdf, control=check_control)
             if not policy_text:
-                policy_text = extract_text_from_pdf(policy_pdf)
+                policy_text = extract_text_from_pdf(policy_pdf, control=check_control)
 
     print(f"  Denial letter: {len(denial_text.split())} words")
     print(f"  Policy document: {len(policy_text.split())} words")
@@ -121,20 +138,16 @@ def run_pipeline(
     # ── Agent 1: Auditor ──────────────────────────────────────────
     print("\n[Step 1/5] Auditor — Parsing documents...")
     emit("auditor", "Auditor is parsing denial and policy documents", 15, "running")
-    with _timed("Auditor") as t1:
+    with stage_timer("Auditor") as t1:
         auditor_result = auditor.run(denial_text, policy_text, case_id)
         auditor_result = validate_agent_output("Auditor", auditor_result)
 
     print(f"\n  Extracted:")
-    print(f"  • Insurer     : {auditor_result.get('insurer_name')}")
-    print(f"  • Treatment   : {auditor_result.get('treatment_or_procedure')}")
-    print(f"  • Denial type : {auditor_result.get('denial_reason_category')}")
-    print(f"  • Claim amount: {auditor_result.get('claim_amount')}")
 
     # ── Agent 2: Policy Analyst ───────────────────────────────────
     print("\n[Step 2/5] Policy Analyst — Examining policy terms...")
     emit("policy_analyst", "Policy Analyst is checking clauses and exclusions", 30, "running")
-    with _timed("Policy Analyst") as t2:
+    with stage_timer("Policy Analyst") as t2:
         policy_result = policy_analyst.run(policy_text, auditor_result, case_id)
         policy_result = validate_agent_output("Policy Analyst", policy_result)
         policy_result = annotate_policy_evidence(policy_result, policy_text)
@@ -145,14 +158,12 @@ def run_pipeline(
     # ── Agent 3: IRDAI Checker ────────────────────────────────────
     print("\n[Step 3/5] IRDAI Checker — Checking against regulations...")
     emit("irdai_checker", "IRDAI Checker is matching the case against regulations", 50, "running")
-    with _timed("IRDAI Checker") as t3:
+    with stage_timer("IRDAI Checker") as t3:
         irdai_result = irdai_checker.run(auditor_result, policy_result, case_id)
         irdai_result = validate_agent_output("IRDAI Checker", irdai_result)
         irdai_result["verified_policy_context"] = policy_result.get("verified_policy_context", "")
 
     pathway = irdai_result.get("appeal_pathway", {})
-    print(f"\n  Recommended appeal: {pathway.get('recommended_first_step')}")
-    print(f"  Success estimate  : {pathway.get('estimated_success_probability')}")
 
     violations = irdai_result.get("potential_insurer_violations", [])
     if violations:
@@ -161,7 +172,7 @@ def run_pipeline(
     # ── Agent 4: Appeal Writer ────────────────────────────────────
     print("\n[Step 4/5] Appeal Writer — Drafting letter...")
     emit("appeal_writer", "Appeal Writer is drafting the appeal letter", 70, "running")
-    with _timed("Appeal Writer") as t4:
+    with stage_timer("Appeal Writer") as t4:
         letter = appeal_writer.run(auditor_result, policy_result, irdai_result, case_id)
         letter = validate_agent_output("Appeal Writer", letter)
     print(f"  Letter length: {len(letter.split())} words")
@@ -169,7 +180,7 @@ def run_pipeline(
     # ── Agent 5: Judge ────────────────────────────────────────────
     print("\n[Step 5/5] Judge — Reviewing quality...")
     emit("judge", "Judge is reviewing the draft for quality and hallucinations", 85, "running")
-    with _timed("Judge") as t5:
+    with stage_timer("Judge") as t5:
         judge_result = judge.run(letter, auditor_result, irdai_result, case_id)
         judge_result = validate_agent_output("Judge", judge_result)
 
@@ -193,11 +204,10 @@ def run_pipeline(
         print(f"{'─'*60}")
         emit("revision", f"Applying revision #{revision_count}", 90, "running")
 
-        for change in judge_result.get("if_revise_top_changes", [])[:3]:
-            print(f"  → {change}")
+        print("  Applying bounded quality feedback; details remain in the private report.")
 
         # Revise the letter
-        with _timed(f"Revision #{revision_count}"):
+        with stage_timer(f"Revision #{revision_count}"):
             letter = appeal_writer.revise(
                 original_letter=letter,
                 judge_feedback=judge_result,
@@ -216,7 +226,7 @@ def run_pipeline(
 
         # Re-judge the revised letter
         print(f"\n  [Judge] Re-evaluating revision #{revision_count}...")
-        with _timed(f"Judge re-evaluation #{revision_count}"):
+        with stage_timer(f"Judge re-evaluation #{revision_count}"):
             judge_result = judge.run(letter, auditor_result, irdai_result, case_id)
             judge_result = validate_agent_output("Judge", judge_result)
 
@@ -257,7 +267,7 @@ def run_pipeline(
                 "Remove or rewrite every claim listed as unsupported. Use only facts present in the supplied documents or ask for clarification."
             ],
         }
-        with _timed("Evidence correction"):
+        with stage_timer("Evidence correction"):
             corrected_letter = appeal_writer.revise(
                 original_letter=letter,
                 judge_feedback=evidence_feedback,
@@ -304,7 +314,7 @@ def run_pipeline(
         writer_state["letter"] = letter
         save_checkpoint(case_id, "appeal_writer", writer_state)
         emit("judge", "Judge is reviewing the evidence-corrected final letter", 98, "running")
-        with _timed("Final evidence review"):
+        with stage_timer("Final evidence review"):
             judge_result = validate_agent_output(
                 "Judge", judge.run(letter, auditor_result, irdai_result, case_id)
             )
@@ -352,7 +362,8 @@ def run_pipeline(
 
     # ── Assemble full report ──────────────────────────────────────
     pipeline_time = time.time() - pipeline_start
-    llm_stats = get_stats()
+    check_control()
+    llm_stats = usage_delta(stats_start, get_stats())
     full_report = {
         "case_id": case_id,
         "inputs": {
@@ -377,6 +388,7 @@ def run_pipeline(
             "final_score": score,
             "final_recommendation": recommendation,
             "llm_stats": llm_stats,
+            "stage_durations_seconds": stage_durations,
         },
     }
 

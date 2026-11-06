@@ -76,7 +76,9 @@ def test_credentialed_cors_rejects_wildcard_configuration(monkeypatch):
         api.validated_origins()
 
 
-def test_completed_private_reads_and_downloads_are_not_cacheable(access, tmp_path):
+def test_completed_private_reads_and_downloads_are_not_cacheable(access, tmp_path, monkeypatch):
+    from tools import io_utils
+    monkeypatch.setattr(io_utils, "OUTPUT_DIR", tmp_path)
     store, clients, _ = access
     job_id = submit(clients["alice"]).json()["job_id"]
     letter = tmp_path / "appeal_letter.txt"; letter.write_text("Private draft", encoding="utf-8")

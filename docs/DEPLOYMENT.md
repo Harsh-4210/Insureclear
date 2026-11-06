@@ -4,8 +4,12 @@
 
 1. Copy `.env.example` to `.env`.
 2. Set `GEMINI_API_KEY`.
-3. For a protected deployment, set a long random `INSURECLEAR_API_KEY` and set `INSURECLEAR_REQUIRE_AUTH=true`.
-4. Start both services:
+3. Set `INSURECLEAR_AUTH_MODE=accounts`, a persistent private auth DB and exact
+   `INSURECLEAR_CORS_ORIGINS`. Provision invite-only accounts with the CLI in
+   [PILOT_OPERATIONS.md](PILOT_OPERATIONS.md). There is no default account.
+4. For explicit localhost HTTP development only, set
+   `INSURECLEAR_AUTH_COOKIE_SECURE=false`; HTTPS deployments must keep it true.
+5. Start both services:
 
 ```bash
 docker compose up --build
@@ -30,11 +34,15 @@ Frontend:
 ```bash
 cd web/frontend
 npm install
-VITE_API_BASE_URL=https://api.example.com VITE_API_KEY=... npm run build
+npm ci
+npm test
+npm run build
 ```
 
-Serve `web/frontend/dist` with a static web server. Do not put the Gemini key in
-frontend variables. `VITE_API_KEY` is an API access key, not the provider secret.
+Serve `web/frontend/dist` with the same-origin `/api` proxy. No access credential
+belongs in Vite variables or the shipped bundle. A deliberately separate API origin
+requires a configured base URL, exact credentialed CORS and matching cookie/CSRF
+behavior; verify those settings before use. Provider keys remain server-side.
 
 ## Persistence and recovery
 
@@ -57,7 +65,7 @@ only if your legal or operational requirements require retaining them.
 ## Production checklist
 
 - Use HTTPS at the reverse proxy.
-- Set `INSURECLEAR_REQUIRE_AUTH=true` and rotate `INSURECLEAR_API_KEY`.
+- Use named-account mode, Secure cookies and private auth storage; shared-key legacy mode is local-only.
 - Restrict `INSURECLEAR_CORS_ORIGINS` to the actual frontend origin.
 - Put the API behind network-level rate limiting as well as the application limiter.
 - Use encrypted storage for the SQLite volume and backups.
@@ -84,3 +92,14 @@ image. Keep `resources/regulatory` available in the build context.
 The frontend build context has its own `.dockerignore` so Windows host
 `node_modules`, local environment files and `dist` are not copied into the
 Linux build stage. This is separate from the API root build context.
+
+
+## Pilot implementation and acceptance
+
+Read [PILOT_OPERATIONS.md](PILOT_OPERATIONS.md) for identity, human review, safe
+retention, cancellation semantics, queue limits, request IDs and readiness. Read
+[PILOT_ACCEPTANCE.md](PILOT_ACCEPTANCE.md) before release. Local code/tests are not
+Docker smoke evidence, legal sign-off, a hosting security review or a load test.
+Private reports retain original source text even after uploaded PDFs are removed;
+include jobs/reviews/auth, sessions and all backups in the retention/security design.
+No environment, backup service, alert destination or public deployment is provisioned.

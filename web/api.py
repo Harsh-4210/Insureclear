@@ -9,7 +9,6 @@ import re
 import shutil
 import threading
 import time
-import traceback
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,7 +16,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, JSONResponse
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SAMPLES_DIR = PROJECT_ROOT / "data" / "samples"
@@ -33,8 +32,13 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from orchestrator.main import run_pipeline  # noqa: E402
 from tools.io_utils import clear_session  # noqa: E402
-from tools.job_store import JobStore  # noqa: E402
+from tools.job_store import JobStore, QueueFull  # noqa: E402
 from web import auth  # noqa: E402
+from tools import io_utils, llm_client
+from tools.regulatory_registry import load_registry
+from tools.review_store import ReviewStore
+from tools.case_lifecycle import delete_case, confined_path
+from tools.runtime_control import RuntimeControl, PipelineCancelled, PipelineTimedOut
 
 
 
@@ -75,7 +79,13 @@ app.add_middleware(
 
 @app.middleware("http")
 async def private_response_headers(request: Request, call_next):
-    response = await call_next(request)
+    request_id = uuid.uuid4().hex
+    try:
+        response = await call_next(request)
+    except Exception as error:
+        print({"event": "request_failed", "request_id": request_id, "error_type": type(error).__name__})
+        response = JSONResponse({"detail": "Request failed; contact the operator with the request ID", "request_id": request_id}, status_code=500)
+    response.headers["X-Request-ID"] = request_id
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
         vary = {value.strip() for value in response.headers.get("Vary", "").split(",") if value.strip()}
@@ -146,7 +156,7 @@ def _guard(request: Request, x_api_key: str | None = Header(default=None)) -> di
 
 def get_authorized_job(job_id: str, principal: dict) -> dict:
     job = _job_snapshot(job_id)
-    if not job:
+    if not job or job.get("status") == "deleting":
         raise HTTPException(404, "Job not found")
     if not principal.get("legacy"):
         same_org = job.get("org_id") == principal["org_id"] and job.get("owner_id") is not None
@@ -216,6 +226,8 @@ def _run_job(job_id: str, payload: dict[str, Any]) -> None:
     input_dir = payload.get("input_dir")
     case_id = payload["case_id"]
     try:
+        runtime = RuntimeControl(cancelled=lambda: (job_store.get(job_id) or {}).get("status") in {"cancelled", "cancellation_requested", "deleting"}, stats=llm_client.get_stats)
+        runtime.check()
         if payload.get("fresh_run"):
             clear_session(case_id)
         run_result = run_pipeline(
@@ -225,27 +237,21 @@ def _run_job(job_id: str, payload: dict[str, Any]) -> None:
             denial_text=payload.get("denial_text"),
             policy_text=payload.get("policy_text"),
             progress_callback=_progress_callback(job_id),
+            control=runtime.check,
         )
-        _update_job(
-            job_id,
-            status="completed",
-            progress=100,
-            stage="complete",
-            message="Pipeline complete",
-            result=run_result,
-            error=None,
-            traceback=None,
-        )
+        runtime.check()
+        if not job_store.complete(job_id, run_result):
+            raise PipelineCancelled("Completion was superseded by cancellation")
     except Exception as exc:
         snapshot = _job_snapshot(job_id) or {}
         _update_job(
             job_id,
-            status="failed",
+            status="cancelled" if isinstance(exc, PipelineCancelled) else "timed_out" if isinstance(exc, PipelineTimedOut) else "failed",
             progress=snapshot.get("progress", 0),
-            stage="failed",
-            message="Pipeline failed",
-            error=str(exc),
-            traceback=traceback.format_exc(),
+            stage="cancelled" if isinstance(exc, PipelineCancelled) else "failed",
+            message="Pipeline stopped" if isinstance(exc, (PipelineCancelled, PipelineTimedOut)) else "Pipeline failed",
+            error=type(exc).__name__,
+            traceback=None,
         )
     finally:
         if input_dir:
@@ -342,9 +348,14 @@ async def analyze(
             shutil.rmtree(input_dir, ignore_errors=True)
             raise
 
-    job_store.create(job_id, payload, normalized_mode, resolved_case_id, fresh_run,
-                     owner_id=None if principal.get("legacy") else principal["user_id"],
-                     org_id=None if principal.get("legacy") else principal["org_id"], case_label=case_label)
+    try:
+        job_store.create(job_id, payload, normalized_mode, resolved_case_id, fresh_run,
+                         owner_id=None if principal.get("legacy") else principal["user_id"],
+                         org_id=None if principal.get("legacy") else principal["org_id"], case_label=case_label)
+    except QueueFull as error:
+        if input_dir:
+            shutil.rmtree(input_dir, ignore_errors=True)
+        raise HTTPException(429, str(error), headers={"Retry-After": "30"}) from None
     _start_worker()
     return {
         "job_id": job_id,
@@ -387,10 +398,8 @@ def download_report(job_id: str, principal: dict = Depends(_authenticate)) -> Fi
     job = get_authorized_job(job_id, principal)
     if not job or not job.get("result"):
         raise HTTPException(status_code=404, detail="Completed job not found")
-    report_path = Path(job["result"].get("artifacts", {}).get("full_report_path", ""))
-    if not report_path.is_file():
-        raise HTTPException(status_code=404, detail="Report file not found")
-    return FileResponse(report_path, media_type="application/json", filename=report_path.name)
+    report_path = artifact_path(job, "full_report_path")
+    return JSONResponse(_public_report(job["result"]), headers={"Content-Disposition": "attachment; filename=full_report.json"})
 
 
 @app.get("/api/jobs/{job_id}/download/letter")
@@ -398,10 +407,8 @@ def download_letter(job_id: str, principal: dict = Depends(_authenticate)) -> Fi
     job = get_authorized_job(job_id, principal)
     if not job or not job.get("result"):
         raise HTTPException(status_code=404, detail="Completed job not found")
-    letter_path = Path(job["result"].get("artifacts", {}).get("appeal_letter_path", ""))
-    if not letter_path.is_file():
-        raise HTTPException(status_code=404, detail="Appeal letter file not found")
-    return FileResponse(letter_path, media_type="text/plain", filename=letter_path.name)
+    letter_path = artifact_path(job, "appeal_letter_path")
+    return FileResponse(letter_path, media_type="text/plain", filename="draft-appeal-letter.txt")
 
 
 @app.get("/api/jobs")
@@ -411,3 +418,80 @@ def list_jobs(principal: dict = Depends(_authenticate)) -> dict:
 
 from web.reviews import router as review_router
 app.include_router(review_router)
+
+
+def artifact_path(job, key):
+    value = job["result"].get("artifacts", {}).get(key)
+    if not value:
+        raise HTTPException(404, "Artifact unavailable")
+    try:
+        path = confined_path(io_utils.OUTPUT_DIR, value)
+    except ValueError:
+        raise HTTPException(404, "Artifact unavailable") from None
+    if not path.is_file():
+        raise HTTPException(404, "Artifact unavailable")
+    return path
+
+
+def _provider_configured():
+    if llm_client.PROVIDER == "groq":
+        return llm_client.get_stats().get("groq_configured_key_count", 0) > 0
+    return llm_client.PROVIDER == "gemini" and bool(os.getenv("GEMINI_API_KEY"))
+
+
+@app.get("/ready")
+def ready():
+    checks = {}
+    try:
+        with job_store._connect() as db: db.execute("SELECT 1").fetchone()
+        checks["database"] = True
+    except Exception: checks["database"] = False
+    try:
+        load_registry(); checks["registry"] = True
+    except Exception: checks["registry"] = False
+    try:
+        validated_origins()
+        RuntimeControl()
+        if min(int(os.getenv("INSURECLEAR_MAX_PENDING_JOBS", "100")), int(os.getenv("INSURECLEAR_MAX_PENDING_PER_USER", "3"))) < 1:
+            raise ValueError("Queue configuration invalid")
+        if os.getenv("INSURECLEAR_AUTH_MODE", "legacy") == "accounts":
+            with auth.get_store()._connect() as db: db.execute("SELECT 1").fetchone()
+        checks["auth_configuration"] = True
+    except Exception: checks["auth_configuration"] = False
+    checks["provider_configured"] = bool(_provider_configured())
+    ok = all(checks.values())
+    return JSONResponse({"status": "ready" if ok else "not_ready", "checks": checks, "provider_availability_tested": False}, status_code=200 if ok else 503)
+
+
+def _owner_or_admin(job, principal):
+    if principal.get("legacy") or (job.get("owner_id") != principal["user_id"] and principal["role"] != "admin"):
+        raise HTTPException(403, "Case owner or organization admin required")
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_job(job_id: str, request: Request, principal: dict = Depends(_authenticate)):
+    _mutation(request, principal)
+    job = get_authorized_job(job_id, principal)
+    _owner_or_admin(job, principal)
+    return {"job_id": job_id, "status": job_store.cancel(job_id)}
+
+
+@app.delete("/api/jobs/{job_id}")
+def remove_job(job_id: str, request: Request, principal: dict = Depends(_authenticate)):
+    _mutation(request, principal)
+    job = get_authorized_job(job_id, principal)
+    _owner_or_admin(job, principal)
+    try:
+        delete_case(job_store, ReviewStore(job_store.db_path), job_id, {"sessions": io_utils.SESSIONS_DIR, "outputs": io_utils.OUTPUT_DIR, "inputs": JOB_INPUTS_DIR})
+    except ValueError as error:
+        raise HTTPException(409, "Case cleanup refused; active work or unsafe artifact paths require operator attention") from None
+    return {"deleted": True, "job_id": job_id}
+
+
+@app.get("/api/operations")
+def operations(principal: dict = Depends(_authenticate)):
+    if principal.get("legacy") or principal["role"] != "admin":
+        raise HTTPException(403, "Named organization admin required")
+    with job_store._connect() as db:
+        counts = {row[0]: row[1] for row in db.execute("SELECT status,COUNT(*) FROM jobs WHERE org_id=? GROUP BY status", (principal["org_id"],))}
+    return {"status_counts": counts, "in_flight_cancellation": "cooperative_stage_boundaries"}
