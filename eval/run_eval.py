@@ -35,6 +35,7 @@ from eval.score import score_case, summarise
 from orchestrator.main import run_pipeline
 from tools import llm_client
 from tools.io_utils import clear_session
+from tools.regulatory_registry import load_registry
 
 RESULTS_DIR = PROJECT_ROOT / "eval" / "results"
 MIN_SECONDS_BETWEEN_CALLS = 13  # Gemini free tier allows 5 requests per minute
@@ -67,15 +68,38 @@ def _throttle_gemini() -> None:
                 time.sleep(60)
 
     model_cls.generate_content = throttled
-KNOWLEDGE_TEXT = (PROJECT_ROOT / "tools" / "irdai_knowledge.py").read_text(encoding="utf-8")
+
+
+
+def evaluation_sources(denial: str, policy: str, report: dict) -> list[str]:
+    """Reconstruct support from pinned source bytes, never model-provided text."""
+    sources = [denial, policy]
+    metadata = report.get("regulatory_evidence") or {}
+    if not metadata:
+        return sources
+    registry = load_registry()
+    if metadata.get("registry_fingerprint") != registry.fingerprint:
+        raise ValueError("Evaluation registry version differs from the report; use its pinned registry")
+    allowed = {f"{c['source_id']}:{c['id']}": c for c in registry.clauses}
+    for entry in metadata.get("excerpts", []):
+        evidence_id = entry.get("evidence_id")
+        clause = allowed.get(evidence_id) if isinstance(evidence_id, str) else None
+        if not clause or entry.get("text") != clause["text"]:
+            raise ValueError("Evaluation source excerpt failed pinned-registry integrity")
+        source = registry.sources[clause["source_id"]]
+        sources.append(source["reference"] + "\n" + clause["text"])
+    return sources
 
 
 def _tick(value) -> str:
     return "yes" if value else "no"
 
 
-def write_summary(run_dir: Path, results: list[dict], failures: list[dict]) -> dict:
+def write_summary(run_dir: Path, results: list[dict], failures: list[dict], reused_cases: int = 0) -> dict:
     summary = summarise(results)
+    summary["reused_cases"] = reused_cases
+    summary["new_cases"] = len(results) - reused_cases
+    summary["usage_scope"] = "current_invocation"
     summary["failed_cases"] = len(failures)
     summary["failures"] = failures
     summary["model"] = f"{llm_client.PROVIDER}:{llm_client.MODEL_NAME}"
@@ -91,6 +115,8 @@ def write_summary(run_dir: Path, results: list[dict], failures: list[dict]) -> d
         f"# InsureClear evaluation ({run_dir.name})",
         "",
         f"Model: `{summary['model']}`. Cases: {summary['cases']} synthetic denials with a hand-written answer key.",
+        "",
+        f"Reports: {summary['reused_cases']} reused and reverified; {summary['new_cases']} newly generated. Provider usage counts this invocation only.",
         "",
         "| Case | Facts extracted | Verdict right | Letter facts | Key argument | Unsupported IDs | Judge | Revisions |",
         "|---|---|---|---|---|---|---|---|",
@@ -175,11 +201,26 @@ def main() -> None:
 
     results = []
     failures = []
+    reused_cases = 0
     for case in cases:
         case_file = run_dir / f"{case['id']}.json"
         if case_file.exists():
-            results.append(json.loads(case_file.read_text(encoding="utf-8"))["score"])
-            print(f"[eval] {case['id']}: already scored, skipping")
+            saved = json.loads(case_file.read_text(encoding="utf-8"))
+            denial, policy = build_documents(case)
+            try:
+                score = score_case(saved["report"], case, evaluation_sources(denial, policy, saved["report"]))
+            except (ValueError, KeyError, TypeError) as error:
+                failures.append({"id": case["id"], "error": str(error), "exception_type": type(error).__name__})
+                print(f"[eval] {case['id']}: saved report cannot be verified: {error}")
+                continue
+            if saved.get("score") != score:
+                saved.setdefault("score_history", []).append(saved.get("score"))
+                saved["score"] = score
+                saved["score_schema_version"] = 2
+                case_file.write_text(json.dumps(saved, indent=2, ensure_ascii=False), encoding="utf-8")
+            results.append(score)
+            reused_cases += 1
+            print(f"[eval] {case['id']}: saved report verified and rescored, no provider call")
             continue
 
         denial, policy = build_documents(case)
@@ -208,16 +249,16 @@ def main() -> None:
         finally:
             clear_session(case_id)
 
-        score = score_case(report, case, [denial, policy, KNOWLEDGE_TEXT])
+        score = score_case(report, case, evaluation_sources(denial, policy, report))
         case_file.write_text(
-            json.dumps({"score": score, "report": report}, indent=2, ensure_ascii=False, default=str),
+            json.dumps({"score": score, "report": report, "score_schema_version": 2}, indent=2, ensure_ascii=False, default=str),
             encoding="utf-8",
         )
         results.append(score)
         print(f"[eval] {case['id']}: scored")
         time.sleep(2)
 
-    summary = write_summary(run_dir, results, failures)
+    summary = write_summary(run_dir, results, failures, reused_cases)
     print(json.dumps(summary, indent=2))
     print(f"\nResults: {run_dir}")
     gate_failures = check_regression_gates(

@@ -85,3 +85,59 @@ def test_regression_gates_include_pipeline_failures():
         {"verdict_accuracy": 1.0, "unsupported_claim_rate": 0.0, "failed_cases": 1}
     )
     assert failures == ["1 case(s) failed to run"]
+
+
+def test_evaluation_recognizes_only_integrity_checked_selected_source_citations():
+    from eval import run_eval
+    from tools.regulatory_registry import load_registry
+    denial, policy = build_documents(CASE)
+    selected = load_registry().select("non_disclosure", {})
+    report = make_report("See IRDAI/HLT/CIR/PRO/84/5/2024 and FAKE/REG/999/2025.", False)
+    report["regulatory_evidence"] = selected.as_dict()
+    report["verified_source_context"] = "FAKE/REG/999/2025"
+    sources = run_eval.evaluation_sources(denial, policy, report)
+    scored = score_case(report, CASE, sources)
+    assert scored["unsupported_ids"] == ["FAKE/REG/999/2025"]
+
+
+def test_resuming_evaluation_rechecks_saved_scores_without_provider_calls(monkeypatch, tmp_path):
+    import json
+    import sys
+    from eval import run_eval
+    from tools.regulatory_registry import load_registry
+    denial, policy = build_documents(CASE)
+    report = make_report("Suraksha Health Policy SHI4410028731 claim CLM-SHI-2025-55102 Deshmukh moratorium IRDAI/HLT/CIR/PRO/84/5/2024.", False)
+    report["regulatory_evidence"] = load_registry().select("non_disclosure", {}).as_dict()
+    report["evidence_validation"] = {"valid": True, "errors": []}
+    stale = score_case(report, CASE, [denial, policy])
+    assert stale["unsupported_ids"]
+    run_dir = tmp_path / "resumed"
+    run_dir.mkdir()
+    (run_dir / f"{CASE['id']}.json").write_text(json.dumps({"report": report, "score": stale}), encoding="utf-8")
+    monkeypatch.setattr(run_eval, "RESULTS_DIR", tmp_path)
+    monkeypatch.setattr(run_eval, "CASES", [CASE])
+    def unexpected_call(**kwargs):
+        raise AssertionError("A saved report must not call a provider")
+    monkeypatch.setattr(run_eval, "run_pipeline", unexpected_call)
+    monkeypatch.setattr(run_eval, "_throttle_gemini", lambda: None)
+    monkeypatch.setattr(sys, "argv", ["run_eval", "--resume", "resumed", "--min-verdict-accuracy", "1", "--max-unsupported-claim-rate", "0"])
+    run_eval.main()
+    summary = json.loads((run_dir / "summary.json").read_text())
+    assert summary["cases"] == 1 and summary["unsupported_claim_rate"] == 0
+    assert summary["reused_cases"] == 1 and summary["new_cases"] == 0
+    assert summary["usage_scope"] == "current_invocation"
+
+
+def test_documents_submitted_fixture_contains_the_evidence_its_answer_requires():
+    case = next(c for c in CASES if c["id"] == "c08_documents_submitted")
+    denial, policy = build_documents(case)
+    acknowledged_upload = denial.split("(Our records show", 1)[1].lower()
+    for document in ("claim form", "discharge summary", "final bill", "investigation reports"):
+        assert document in acknowledged_upload, f"Already-submitted fixture lacks acknowledged {document}"
+
+
+def test_key_argument_matching_normalizes_unicode_hyphens():
+    from eval.score import score_key_argument
+    case = next(c for c in CASES if c["id"] == "c04_day_care")
+    result = score_key_argument("The policy covers day\u2011care chemotherapy.", case)
+    assert result["found"] and "day-care" in result["matched"]

@@ -31,3 +31,20 @@
 - Final review completion: two remaining findings reproduced RED: existing Docker data volumes hide the corpus; direct Checker/Writer caches ignored changed inputs.
 - Ruling: bundled immutable corpus moved from data/regulatory to resources/regulatory so existing /app/data volumes cannot mask it. Candidate imports remain mutable and separate.
 - Final: direct caches now bind case facts, selected evidence, source version and budget; Writer revisions/sanitization preserve the input hash for correct resume.
+
+- 2026-11-06: resumed after automatic approval-review usage failure; the rejected test edit had not executed, and normal review succeeded on retry.
+- Live sp_final_20261105: 4 cases scored with correct verdicts/letter facts; 6 failed on DNS. All 4 had validation/scoring flags, so this was not a passing release baseline.
+- Fixed live-format regressions RED to GREEN: circular-ID date fragments, equivalent month/numeric dates, Unicode-spaced amounts, source subclause labels, and committee acronyms.
+- Ruling: curated clause aliases describe printed parent/subclause layout; their provenance remains pinned and all legal interpretations remain human-reviewed.
+- Evaluation sources now reconstruct support from exact selected registry excerpts and verify the registry version; generated source text and legacy knowledge are excluded. Resume re-scores saved reports without provider calls and preserves score history.
+
+- 2026-11-06: full automated suite 118 passed after live-format and scorer-source fixes. Fresh synthetic-only evaluation sp_verified_20261106 is running with pinned source/fixture manifests.
+- Container build context now excludes .env, virtual environments and private case/session/output directories; immutable resources/regulatory remains bundled outside the mutable volume. This config change does not change runtime model inputs.
+
+- 2026-11-06 final: 120 automated tests passed; final three scoring/fixture regressions observed RED then GREEN (11/11 focused scorer tests). Frontend source remains unchanged since its passing build.
+- Fresh sp_verified_20261106 completed 10/10 executions, 9/10 verdicts, tracked facts 100%, zero detected evidence violations, 6/7 keyword hits. Preserve original inputs/answers and failed verdict gate.
+- Ruling: correct c08's contradictory acknowledgment to explicitly list the documents its unchanged answer key says were submitted; normalize equivalent Unicode hyphens for c04 keyword scoring. Preserve original results, and reuse only nine byte-identical input/report bodies after verifying core source and registry hashes. Cost: final metrics use a revised fixture and reused reports, not a second independent ten-case run.
+- Task 5: complete — sp_release_20261106 passed configured strict gates: 10/10 verdicts, tracked extraction/letter facts 100%, 7/7 keyword hits, zero detected evidence violations, zero execution failures. Nine reverified reports and one new c08 live run; all answer keys unchanged.
+- Cohort audit: 83 successful calls, 281879 reported tokens, 5 retries, zero 429s; mean 73.75s and nearest-rank sample p95 147.48s. New invocation alone: 8 calls/27799 tokens. All ten short sources fit completely; nine REVIEW_REQUIRED and one REVISE. Latency target remains unmet.
+- Ruling: retain the approved human-review boundary rather than infer semantic/legal correctness from deterministic gates — c04 misses a strong supplied policy argument, c08 intermediate explanation reverses an accident exception, and requested deadlines/generic sanitized legal references need review. Cost: expert edits and broader expert-scored evaluation remain production work.
+- Final status: current local HEAD is 14ee15f, with final corrections uncommitted. No push/merge/deployment in this completion pass. Independent important findings were fixed with regression evidence; the first review hit a usage limit, so no clean independent approval is asserted. No separate deferred-minor list was returned.

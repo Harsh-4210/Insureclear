@@ -7,6 +7,8 @@ judge whether an argument is legally correct.
 
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
+from datetime import date
+import calendar
 import re
 from typing import Mapping
 
@@ -40,14 +42,15 @@ class EvidenceValidation:
 
 
 _DATE = re.compile(
-    r"\b(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|"
+    r"(?<![A-Za-z0-9/_-])(?:\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|"
     r"\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s+\d{4}|"
-    r"[A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4})\b",
+    r"[A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4})\b(?![A-Za-z0-9/_-])",
     re.I,
 )
+_NUMBER = r"(?:\d{1,3}(?:,\s*\d{2,3})+|\d+)(?:\.\d+)?"
 _AMOUNT = re.compile(
-    r"(?:(?:₹|INR|Rs\.?)\s*[\d,]+(?:\.\d+)?(?:\s*(?:lakhs?|crores?))?|"
-    r"[\d,]+(?:\.\d+)?\s*(?:rupees|INR|lakhs?|crores?))",
+    rf"(?:(?:₹|INR|Rs\.?)\s*{_NUMBER}(?:\s*(?:lakhs?|crores?))?|"
+    rf"{_NUMBER}\s*(?:rupees|INR|lakhs?|crores?))",
     re.I,
 )
 _CLAUSE = re.compile(
@@ -62,7 +65,7 @@ _ID = re.compile(
     re.I,
 )
 _BARE_ID = re.compile(
-    r"\b[A-Z]{2,}(?:/[A-Z0-9]+|-[A-Z0-9]+){1,}(?:/\d{2,})?/?(?![A-Za-z0-9])"
+    r"\b(?=[A-Z0-9/-]*\d)[A-Z]{2,}(?:/[A-Z0-9]+|-[A-Z0-9]+){1,}(?:/\d{2,})?/?(?![A-Za-z0-9])"
 )
 _CASE_LAW = re.compile(
     r"\b[A-Z][A-Za-z.&' -]{2,}\s+v(?:s?\.?|ersus)\s+[A-Z][A-Za-z.&' -]{2,}"
@@ -93,7 +96,8 @@ def _contains_reference(value: str, source: str) -> bool:
 
 
 def _amount_value(value: str):
-    match = re.search(r"[\d,]+(?:\.\d+)?", value)
+    compact = re.sub(r"(?<=,)\s+(?=\d)", "", value)
+    match = re.search(r"[\d,]+(?:\.\d+)?", compact)
     if not match:
         return None
     try:
@@ -108,7 +112,31 @@ def _amount_value(value: str):
     return number
 
 
+def _date_value(value: str):
+    value = re.sub(r"(?<=\d)(?:st|nd|rd|th)\b", "", value.lower())
+    numeric = re.fullmatch(r"(\d{1,2})[./-](\d{1,2})[./-](\d{4})", value.strip())
+    try:
+        if numeric:
+            day, month, year = map(int, numeric.groups())
+            return date(year, month, day)
+        parts = re.sub(r",", " ", value).split()
+        months = {name.lower(): number for number in range(1, 13) for name in (calendar.month_name[number], calendar.month_abbr[number])}
+        months["sept"] = 9
+        if len(parts) == 3 and len(parts[2]) == 4:
+            if parts[0].isdigit() and parts[1] in months:
+                return date(int(parts[2]), months[parts[1]], int(parts[0]))
+            if parts[0] in months and parts[1].isdigit():
+                return date(int(parts[2]), months[parts[0]], int(parts[1]))
+    except ValueError:
+        pass
+    return None
+
+
 def _present(value: str, source: str) -> bool:
+    if _DATE.fullmatch(value.strip()):
+        normalized = _date_value(value)
+        if normalized is not None:
+            return any(_date_value(candidate) == normalized for candidate in _DATE.findall(source))
     if _AMOUNT.fullmatch(value.strip()):
         amount = _amount_value(value)
         return amount is not None and any(_amount_value(candidate) == amount for candidate in _AMOUNT.findall(source))
@@ -192,15 +220,38 @@ def validate_appeal_letter(
 
     case_text = "\n".join(str((sources or {}).get(key) or "") for key in ("denial", "policy"))
     issues: list[EvidenceIssue] = []
-    _add_missing(issues, "unsupported_id", _ID.findall(letter), source_text)
+    for value in _ID.findall(letter):
+        patient_id = bool(re.match(r"(?:policy|claim|case|member|certificate|customer|UHID)\b", value, re.I))
+        _add_missing(issues, "unsupported_id", [value], case_text if patient_id else source_text)
     _add_missing(issues, "unsupported_id", _BARE_ID.findall(letter), source_text)
     _add_missing(issues, "unsupported_date", _DATE.findall(letter), source_text)
     _add_missing(issues, "unsupported_amount", _AMOUNT.findall(letter), case_text)
-    for match in _CLAUSE.finditer(letter):
+    clause_matches = list(_CLAUSE.finditer(letter))
+    regulatory_text = str((sources or {}).get("regulatory") or "")
+    regulatory_bindings = set()
+
+    def clause_key(value):
+        return re.sub(r"^\D+", "", value.lower()).replace(" ", "")
+
+    def has_regulatory_context(match):
+        before = letter[max(0, match.start() - 160):match.start()].lower()
+        after = letter[match.end():match.end() + 100].lower()
+        return (
+            match.group().lower().startswith(("regulation", "rule", "article", "paragraph", "para"))
+            or bool(re.search(r"(?:irdai|master\s+circular|regulatory|gazette|same\s+circular)[^.!?\n]{0,120}$", before))
+            or bool(re.search(r"^[^.!?\n]{0,80}(?:circular|irdai|gazette)", after))
+        )
+
+    for match in clause_matches:
+        if has_regulatory_context(match) and _present(match.group(), regulatory_text):
+            regulatory_bindings.add(clause_key(match.group()))
+            regulatory_bindings.add(re.sub(r"\([a-z0-9]+\)$", "", clause_key(match.group())))
+    for match in clause_matches:
         value = match.group()
-        prefix = letter[max(0, match.start() - 100):match.start()].lower()
-        explicitly_regulatory = value.lower().startswith(("regulation", "rule", "article", "paragraph", "para")) or bool(re.search(r"irdai|circular|regulatory|gazette", prefix))
-        _add_missing(issues, "unsupported_clause", [value], source_text if explicitly_regulatory else case_text)
+        before = letter[max(0, match.start() - 30):match.start()].lower()
+        explicitly_policy = bool(re.search(r"policy(?:'s)?\s*$", before)) or value.lower().startswith("exclusion")
+        use_regulatory = not explicitly_policy and (has_regulatory_context(match) or clause_key(value) in regulatory_bindings)
+        _add_missing(issues, "unsupported_clause", [value], source_text if use_regulatory else case_text)
 
     for value in _CASE_LAW.findall(letter):
         value = value.strip()

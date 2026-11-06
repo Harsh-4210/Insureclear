@@ -1,24 +1,30 @@
 # InsureClear scaling roadmap
 
-Date: 2026-11-05. Status: recommendations, not an approved deployment plan.
+Date: 2026-11-06. Status: recommendations, not an approved deployment plan.
 The user has not decided on target users or daily case volume yet. Stage ranges
 below are planning examples rather than measured capacity commitments. Start
 with a pilot and make larger infrastructure choices from observed demand. No cloud services have been provisioned.
 
 ## Measured starting point
 
-The live ten-case short-document run passed verdict and unsupported-claim gates:
-10/10 verdicts, 0 detected unsupported claims, 0 execution failures. It used
-312,888 tokens and 88 successful provider calls; mean case runtime was 37.4s.
-Letter-fact accuracy was 97.5%, and expected key arguments appeared in 5/7
-applicable cases. See LIVE_REGRESSION_2026-11-05.md for limits and release gaps.
+The final synthetic cohort `sp_release_20261106` contains nine unchanged live
+reports from `sp_verified_20261106` plus one rerun after correcting a contradictory
+fixture. It has 10/10 verdicts, all tracked facts and zero detected evidence
+violations. Keyword checks are 7/7, but manual inspection found reasoning/drafting
+weaknesses, so all outputs remain review or revise. See EVIDENCE_FOUNDATIONS_RESULT.md
+for exact provenance and limits; this is not a production-quality guarantee.
 
-Those observations imply about 31,289 tokens and 8.8 calls per short synthetic
-case. An illustrative 1,000 comparable cases/day would require about 31.3 million
-reported tokens and 8,800 successful calls/day, before production/OCR overhead.
-At 37.4s per case, one serial worker's ideal service ceiling is roughly 96
-cases/hour; this is arithmetic, not a load-tested sustained throughput result.
-Long documents, retries and quota waiting can reduce it substantially.
+The cohort used 281879 reported tokens and 83 successful calls: about 28188 tokens
+and 8.3 calls per short synthetic case. Mean runtime was 73.75s and nearest-rank
+sample p95 147.48s, exceeding the 90s target. The historical pre-foundation run was
+312888 tokens, 88 calls and 37.4s mean. Provider/revision conditions differ; this
+is not a controlled speed or savings comparison.
+
+An illustrative 1000 comparable cases/day implies 28.2 million reported tokens and
+8300 successful calls/day before production/OCR overhead. At 73.75s, one serial
+worker's ideal service ceiling is about 49 cases/hour. This arithmetic excludes
+queueing, quota waits, outages, OCR and reviewer effort; it is not tested capacity.
+Measure peak demand and service times before purchasing infrastructure.
 
 ## Recommended sequence
 
@@ -86,7 +92,7 @@ languages; turnaround goal; reviewer availability; hosting/provider budget;
 data residency/retention requirements; whether users need organizations/teams.
 These determine service selection and cost. None is assumed approved here.
 
-## Sources checked
+## Sources checked (2026-11-06)
 
 - [PostgreSQL SELECT / locking documentation](https://www.postgresql.org/docs/current/sql-select.html)
 - [Groq organization-level rate limits](https://console.groq.com/docs/rate-limits)

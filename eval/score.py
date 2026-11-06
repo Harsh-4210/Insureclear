@@ -61,8 +61,12 @@ def score_key_argument(letter: str, case: dict) -> dict:
     terms = case["answer"]["key_terms"]
     if not terms:
         return {"applicable": False, "found": None, "matched": []}
-    lower = letter.lower()
-    matched = [t for t in terms if t.lower() in lower]
+    def normalized(value: str) -> str:
+        value = re.sub(r"[\u2010-\u2015]", "-", value.casefold())
+        return " ".join(value.split())
+
+    lower = normalized(letter)
+    matched = [t for t in terms if normalized(t) in lower]
     return {"applicable": True, "found": bool(matched), "matched": matched}
 
 

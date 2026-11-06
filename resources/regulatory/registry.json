@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "registry_version": "2026-11-05.1",
+  "registry_version": "2026-11-06.1",
   "curation_scope": "Official artifact provenance and exact excerpts; all case-specific legal application requires human review. Gazette and policyholder-interest artifacts are catalogued; active excerpts currently come from the health circular.",
   "sources": [
     {
@@ -64,7 +64,8 @@
       "effective_from": null,
       "effective_to": null,
       "date_basis": "denial_date",
-      "applicability_status": "requires_review"
+      "applicability_status": "requires_review",
+      "clause_references": []
     },
     {
       "id": "portability",
@@ -83,7 +84,10 @@
       "effective_from": null,
       "effective_to": null,
       "date_basis": "denial_date",
-      "applicability_status": "requires_review"
+      "applicability_status": "requires_review",
+      "clause_references": [
+        "12"
+      ]
     },
     {
       "id": "moratorium",
@@ -101,7 +105,10 @@
       "effective_from": null,
       "effective_to": null,
       "date_basis": "denial_date",
-      "applicability_status": "requires_review"
+      "applicability_status": "requires_review",
+      "clause_references": [
+        "13"
+      ]
     },
     {
       "id": "cashless",
@@ -119,7 +126,12 @@
       "effective_from": null,
       "effective_to": null,
       "date_basis": "denial_date",
-      "applicability_status": "requires_review"
+      "applicability_status": "requires_review",
+      "clause_references": [
+        "15",
+        "15(a)",
+        "15(b)"
+      ]
     },
     {
       "id": "discharge",
@@ -136,7 +148,12 @@
       "effective_from": null,
       "effective_to": null,
       "date_basis": "denial_date",
-      "applicability_status": "requires_review"
+      "applicability_status": "requires_review",
+      "clause_references": [
+        "16",
+        "16(a)",
+        "16(b)"
+      ]
     },
     {
       "id": "claim-review",
@@ -152,7 +169,12 @@
       "effective_from": null,
       "effective_to": null,
       "date_basis": "denial_date",
-      "applicability_status": "requires_review"
+      "applicability_status": "requires_review",
+      "clause_references": [
+        "17",
+        "17(a)",
+        "17(b)"
+      ]
     },
     {
       "id": "document-collection",
@@ -168,7 +190,10 @@
       "effective_from": null,
       "effective_to": null,
       "date_basis": "denial_date",
-      "applicability_status": "requires_review"
+      "applicability_status": "requires_review",
+      "clause_references": [
+        "17(c)"
+      ]
     },
     {
       "id": "grievances",
@@ -184,7 +209,10 @@
       "effective_from": null,
       "effective_to": null,
       "date_basis": "denial_date",
-      "applicability_status": "requires_review"
+      "applicability_status": "requires_review",
+      "clause_references": [
+        "19"
+      ]
     },
     {
       "id": "companion-circular",
@@ -200,7 +228,8 @@
       "effective_from": null,
       "effective_to": null,
       "date_basis": "denial_date",
-      "applicability_status": "requires_review"
+      "applicability_status": "requires_review",
+      "clause_references": []
     }
   ]
 }

@@ -37,7 +37,9 @@ be grounded in case sources, not unrelated regulatory numbers.
 A model cannot assign itself a verified citation. Code links provenance only for
 an exact curated quote and a registered evidence ID of a compatible instrument
 type. Source identity, URL, page and hash come from the registry; model-supplied
-source fields are discarded. A circular cannot verify an invented court or
+source fields are discarded. Curated parent/subclause labels preserve printed PDF
+structure, so references such as 17(a) can be resolved without treating arbitrary
+regulatory digits as patient facts. A circular cannot verify an invented court or
 Ombudsman precedent. `verified_source_only` refers to the exact source quotation;
 `manual_verification_required` and `requires_review` still apply to interpretation.
 

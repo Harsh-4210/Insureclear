@@ -4,8 +4,8 @@ Ten synthetic Indian health-insurance denials with a hand-written answer key.
 Insurers, people and numbers are fictional. Seven denials are challengeable
 and three are valid, so the pipeline is also tested on knowing when NOT to fight.
 
-Each policy is built from one template and kept under 4,000 characters,
-because the Auditor only reads the first 4,000 characters of the policy.
+Each policy is built from one intentionally short template. Long-document
+retrieval and context-boundary behavior are covered by separate regression tests.
 """
 
 POLICY_TEMPLATE = """{insurer_upper}
@@ -277,7 +277,7 @@ CASES = [
         "reason": "The discharge summary was not received despite our reminder dated "
                   "18 September 2025. The claim is closed for want of documents. "
                   "(Our records show your upload on 12 September 2025, acknowledgement "
-                  "ACK-77310, contained the claim form and final bill.)",
+                  "ACK-77310, contained the claim form, discharge summary, final bill and investigation reports.)",
         "answer": {
             "denial_category": ["documentation_missing"],
             "rejection_valid": False,

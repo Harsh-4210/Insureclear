@@ -127,3 +127,29 @@ def test_patient_identifier_cannot_be_sourced_from_a_regulatory_circular():
     reference = "IRDAI/HLT/CIR/PRO/84/5/2024"
     result = validate_appeal_letter("Policy Number: " + reference + ".", {"denial": "A claim was denied.", "regulatory": "Official circular " + reference})
     assert not result.valid
+
+
+def test_dates_in_circular_ids_are_not_patient_dates():
+    ref = "IRDAI/HLT/CIR/PRO/84/5/2024"
+    result = validate_appeal_letter("Please review circular " + ref + ".", {"denial": "Claim denied.", "regulatory": "Official circular " + ref})
+    assert result.valid
+
+
+def test_equivalent_month_names_numeric_dates_and_unicode_amount_groups():
+    result = validate_appeal_letter("The denial dated 20\u202fNov\u202f2025 concerns INR\u202f210,\u202f000. Circular compliance date: 30 September 2024.", {"denial": "Denial dated 20 November 2025 concerns Rs 2,10,000.", "regulatory": "Circular compliance date: 30.9.2024."})
+    assert result.valid, result.errors
+
+
+def test_explicit_regulatory_clause_binding_covers_later_references_without_crossing_policy_scope():
+    from tools.regulatory_registry import load_registry
+    selected = load_registry().select("other", {}, 8000)
+    letter = "IRDAI Master Circular Clause 17(a) governs review. The procedural requirement of Clause 17 is relevant. Clause 19 of the same circular concerns grievances. Under policy Clause 13 I seek cover."
+    result = validate_appeal_letter(letter, {"denial": "A claim was denied.", "policy": "Coverage depends on policy terms.", "regulatory": selected.text})
+    values = {i.value for i in result.errors if i.category == "unsupported_clause"}
+    assert "Clause 17(a)" not in values and "Clause 17" not in values and "Clause 19" not in values
+    assert "Clause 13" in values
+
+
+def test_committee_acronyms_are_not_fabricated_reference_ids():
+    result = validate_appeal_letter("Please confirm CRC/PMC approval.", {"denial": "A claim was denied.", "regulatory": "Claims Review Committee (CRC) and Product Management Committee (PMC)."})
+    assert result.valid

@@ -93,7 +93,8 @@ class Registry:
                 continue
             source = self.sources[clause["source_id"]]
             header = f"[Evidence {evidence_id}; {source['reference']}; page {clause['page']}; legal applicability requires human review]"
-            section = header + "\n" + clause["text"]
+            labels = "; ".join("Clause " + ref for ref in clause.get("clause_references", []))
+            section = header + ("\nSource clause labels: " + labels if labels else "") + "\n" + clause["text"]
             cost = estimate_tokens(section) + 2
             if used + cost > budget_units:
                 omitted.append({"evidence_id": evidence_id, "reason": "context_budget"})
@@ -203,6 +204,10 @@ def load_registry(path: str | Path = DEFAULT_REGISTRY) -> Registry:
             clause["text"] = text[start:end]
             if original.get("quoted_text") is not None and original["quoted_text"] != clause["text"]:
                 raise RegistryError("Clause quotation integrity mismatch")
+            references = clause.get("clause_references", [])
+            import re
+            if not isinstance(references, list) or any(not isinstance(ref, str) or not re.fullmatch(r"\d+(?:\.\d+)*(?:\([a-z0-9]+\))?", ref) for ref in references):
+                raise RegistryError("Invalid curated clause reference")
             clauses.append(clause)
         return Registry(sources, clauses, hashlib.sha256(raw).hexdigest())
     except RegistryError:

@@ -74,3 +74,13 @@ Bundled official regulatory artifacts live in `/app/resources/regulatory` outsid
 new registry versions during image upgrades. Do not mount mutable data volumes
 over `/app/resources`. Operator import candidates remain separate from the bundled
 curated corpus. Rebuild and restart the service to load a new bundled version.
+
+
+The root `.dockerignore` excludes credentials, local virtual environments and
+private case/session/output directories from image build layers. Provider keys
+are supplied at runtime by Compose's `env_file`; they are not bundled in the
+image. Keep `resources/regulatory` available in the build context.
+
+The frontend build context has its own `.dockerignore` so Windows host
+`node_modules`, local environment files and `dist` are not copied into the
+Linux build stage. This is separate from the API root build context.

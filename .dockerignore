@@ -1,0 +1,19 @@
+# Keep credentials, private case data, and local tooling out of image layers.
+.env
+.env.*
+!.env.example
+.git
+.venv
+venv
+**/__pycache__
+.pytest_cache
+sessions
+logs
+data/input
+data/output
+data/job_inputs
+data/*.sqlite3*
+eval/results
+web/frontend/node_modules
+web/frontend/dist
+docs/superpowers/research

@@ -6,14 +6,17 @@ checkboxes and evidence sections whenever a milestone is completed.
 
 ## Current status
 
-**Last updated:** 2026-11-05  
-**Current branch:** `main`  
-**Latest relevant commit:** `5e6513f` (`Sanitize unsupported medical claims`)
+**Last updated:** 2026-11-06
+
+**Current branch:** `codex/evidence-foundations` (local changes, not deployed)
+
+**Local HEAD:** `14ee15f`; final corrections remain in the working tree.
 
 ### Completed baseline
 
-- 62 automated tests pass after the local Superpowers review (provider calls mocked).
-  See [review and remaining work](SUPERPOWERS_REVIEW.md).
+- 120 automated tests pass, including source integrity, provider budgets, cache identity,
+  Docker-volume compatibility simulation and active Streamlit flows (provider calls mocked).
+  See [current result and remaining work](EVIDENCE_FOUNDATIONS_RESULT.md).
 - Strict targeted evaluation for `c01` and `c05` passes:
   - Verdict accuracy: 100%.
   - Letter-fact accuracy: 100%.
@@ -26,12 +29,30 @@ checkboxes and evidence sections whenever a milestone is completed.
   unavailable, the client waits for the earliest cooldown.
 - Agent output validation, structured failures, evidence validation, valid-denial
   guardrails, and bounded evidence correction are implemented.
-- Latest strict full evaluation completed all 10 cases:
+- Historical pre-foundation strict evaluation completed all 10 cases (not the current working-tree release baseline):
   - Extraction accuracy: 100%.
   - Verdict accuracy: 100%.
   - Letter-fact accuracy: 100%.
   - Unsupported-claim rate: 0%.
   - Failed cases: 0.
+
+### Current evidence-foundation validation
+
+The bounded retrieval and pinned-source registry are implemented. Corpus updates
+remain visible outside the mutable Docker data volume, and all interfaces share
+evidence/review gates. The final cohort `sp_release_20261106` passes configured
+verdict/evidence gates: 10/10 verdicts, 100% tracked extraction/letter facts and
+zero detected evidence violations, with no execution failures. It reuses nine
+unchanged, reverified reports and reruns one corrected fixture; it is not an
+independent second ten-case run. Original failures and answer keys are preserved.
+
+The cohort used 83 successful calls and 281879 reported tokens (5 retries, no
+429s). Its 73.75s mean and 147.48s nearest-rank sample p95 do not meet the latency
+target. Manual inspection still found reasoning/drafting weaknesses the scorer
+does not detect. Nine outputs require review and one requires revision; none is
+approved for automatic sending. See [full evidence and limits](EVIDENCE_FOUNDATIONS_RESULT.md).
+Production acceptance remains open pending expert quality review, repeat/long/OCR
+runs, security/operations checks and a deployment-specific validation.
 
 ### Important limitation
 
@@ -46,8 +67,8 @@ The pipeline is production-ready only when all of the following are true:
 | Area | Acceptance criterion | Status |
 |---|---|---|
 | Extraction | At least 95% required facts correct on the curated regression set | ☑ |
-| Verdicts | 100% verdict accuracy on the curated regression set | ☑ |
-| Evidence | Zero unsupported document facts in final letters | ☑ |
+| Verdicts | 100% verdict accuracy on current synthetic cohort (nine reused) | ☑ |
+| Evidence | Zero detected deterministic evidence errors on synthetic cohort; semantic review incomplete | ☐ |
 | Regulations | Correct source/version selected for every regulatory claim | ☐ |
 | Security | No secrets in source, logs, reports, or committed artifacts | ☐ |
 | Reliability | No silent fallback or success-shaped failure | ☑ |
@@ -66,9 +87,10 @@ The pipeline is production-ready only when all of the following are true:
   failure count.
 - [x] Add strict command-line regression gates.
 - [x] Make failed cases explicit and return a non-zero process status.
-- [ ] Run the complete ten-case suite after the latest key-rotation and
-  evidence-validator changes.
-- [ ] Save the latest full-run summary as the release baseline.
+- [x] Complete ten-case live evaluation after the pipeline changes; preserve the
+  failed fresh run and record the final nine-reused/one-rerun cohort explicitly.
+- [x] Save the latest cohort summary and provenance as evaluation evidence.
+- [ ] Establish an independent fresh ten-case pass on the eventual release commit.
 - [ ] Add a documented CI command that runs the strict gates on every change.
 
 Recommended command:
@@ -99,8 +121,8 @@ $env:LLM_PROVIDER="groq"
   `Section 1.2` when the source contains the same section number.
 - [ ] Add canonical fact comparison against the Auditor output for every
   policy number, claim number, date, amount, and insurer name.
-- [ ] Ensure a failed final validation cannot be scored as an approved appeal.
-- [ ] Add regression cases for altered dates, amounts, clauses, case citations,
+- [x] Ensure a failed final validation cannot be emitted as an approved appeal.
+- [x] Add regression cases for altered dates, amounts, clauses, case citations,
   and medical assertions.
 
 ### Phase 3 — Regulatory source and legal-rule control
@@ -144,7 +166,7 @@ $env:LLM_PROVIDER="groq"
   - `missing_policy_clause`
   - `incorrect_verdict`
   - `unverified_case_law`
-- [ ] Cap normal quality revisions at two or three attempts.
+- [x] Cap normal quality revisions at two attempts.
 - [ ] Stop revising when the letter passes validation and has no critical
   evidence errors.
 - [ ] Add a regression test proving that a revision cannot introduce a new
@@ -171,9 +193,9 @@ $env:LLM_PROVIDER="groq"
   - First-attempt 429s.
   - Key rotation.
   - Actual repeated attempts.
-- [ ] Reduce repeated prompt content and unnecessary document retransmission.
-- [ ] Set and enforce per-stage token budgets.
-- [ ] Cache deterministic extraction and evidence-map inputs where safe.
+- [x] Reduce repeated prompt content and bound selected source context.
+- [x] Enforce conservative per-stage prompt/output/reasoning budget bounds.
+- [x] Bind checkpoints and direct-agent caches to inputs, budgets and source versions.
 - [ ] Confirm all production keys are independently authorized and stored only
   in environment variables or a secret manager.
 - [ ] Establish release targets:
@@ -198,7 +220,7 @@ $env:LLM_PROVIDER="groq"
 ### Phase 7 — Release validation
 
 - [ ] Run the full ten-case strict evaluation on the release commit.
-- [ ] Run the complete automated test suite.
+- [x] Run the complete automated test suite (120 passed on the current tree).
 - [ ] Verify no secrets or sensitive generated artifacts are tracked by Git.
 - [ ] Verify p95 runtime and rate-limit metrics against the acceptance table.
 - [ ] Verify reproducibility with at least two runs of the same deterministic
@@ -225,6 +247,9 @@ when possible.
 | 2026-11-05 | `5e6513f` | Full ten-case strict gates | Passed | 10 cases scored; extraction/verdict/letter facts 1.0; unsupported claims 0.0; failed cases 0; 1 Groq 429; mean Judge score 0.687 |
 | 2026-11-05 | working tree on `443d837` | Superpowers review: automated tests and frontend build | Passed | 62 backend tests; frontend build passed; live provider evaluation not rerun; `docs/SUPERPOWERS_REVIEW.md` |
 | 2026-11-05 | working tree on `443d837` | Live strict regression after Superpowers fixes | Passed configured gates | `eval/results/sp_base_20261105`; 10/10 verdicts; 0 unsupported claims; letter facts 97.5%; 88 calls; 7 rate-limit retries; see `docs/LIVE_REGRESSION_2026-11-05.md` |
+| 2026-11-06 | `14ee15f` + local corrections | Automated tests | Passed | 120 tests; scorer/fixture regressions RED to GREEN |
+| 2026-11-06 | working tree | Fresh ten-case live evaluation | Failed verdict gate | `sp_verified_20261106`: 9/10 verdicts; c08 fixture contradiction preserved |
+| 2026-11-06 | working tree | Final verified cohort, nine reused/one rerun | Passed configured gates; production limits open | `sp_release_20261106`: 10/10 verdicts; tracked facts 100%; 0 detected evidence violations; p95 147.48s; details in `EVIDENCE_FOUNDATIONS_RESULT.md` |
 
 ## Operational commands
 
