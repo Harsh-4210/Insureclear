@@ -68,3 +68,23 @@ def test_case_creation_requires_session_csrf(access):
     _, clients, _ = access
     clients["alice"].headers.pop("X-CSRF-Token")
     assert submit(clients["alice"]).status_code == 403
+
+
+def test_credentialed_cors_rejects_wildcard_configuration(monkeypatch):
+    monkeypatch.setenv("INSURECLEAR_CORS_ORIGINS", "*")
+    with pytest.raises(ValueError, match="explicit"):
+        api.validated_origins()
+
+
+def test_completed_private_reads_and_downloads_are_not_cacheable(access, tmp_path):
+    store, clients, _ = access
+    job_id = submit(clients["alice"]).json()["job_id"]
+    letter = tmp_path / "appeal_letter.txt"; letter.write_text("Private draft", encoding="utf-8")
+    report = tmp_path / "full_report.json"; report.write_text("{}", encoding="utf-8")
+    store.update(job_id, status="completed", result={"appeal_letter": "Private draft", "artifacts": {"appeal_letter_path": str(letter), "full_report_path": str(report)}})
+    for suffix in ["", "/report", "/letter", "/download/report", "/download/letter"]:
+        response = clients["alice"].get(f"/api/jobs/{job_id}{suffix}")
+        assert response.status_code == 200
+        assert response.headers.get("cache-control") == "no-store"
+        assert "Cookie" in response.headers.get("vary", "")
+        assert clients["bob"].get(f"/api/jobs/{job_id}{suffix}").status_code == 404

@@ -51,14 +51,19 @@ app = FastAPI(title="InsureClear API", version="1.1.0", lifespan=lifespan)
 app.include_router(auth.router)
 job_store = JobStore(os.getenv("INSURECLEAR_JOB_DB", str(PROJECT_ROOT / "data" / "jobs.sqlite3")))
 
-allowed_origins = [
-    origin.strip()
-    for origin in os.getenv(
-        "INSURECLEAR_CORS_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173",
-    ).split(",")
-    if origin.strip()
-]
+def validated_origins() -> list[str]:
+    from urllib.parse import urlsplit
+    origins = [value.strip() for value in os.getenv("INSURECLEAR_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if value.strip()]
+    for origin in origins:
+        parsed = urlsplit(origin)
+        if "*" in origin or parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment:
+            raise ValueError("CORS requires explicit HTTP(S) origins without paths or wildcards")
+    if not origins:
+        raise ValueError("CORS requires an explicit origin allowlist")
+    return origins
+
+
+allowed_origins = validated_origins()
 
 app.add_middleware(
     CORSMiddleware,
@@ -67,6 +72,16 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Content-Type", "X-API-Key", "X-CSRF-Token"],
 )
+
+@app.middleware("http")
+async def private_response_headers(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+        vary = {value.strip() for value in response.headers.get("Vary", "").split(",") if value.strip()}
+        response.headers["Vary"] = ", ".join(sorted(vary | {"Cookie"}))
+    return response
+
 
 _worker_stop = threading.Event()
 _worker_thread: threading.Thread | None = None
@@ -392,3 +407,7 @@ def download_letter(job_id: str, principal: dict = Depends(_authenticate)) -> Fi
 @app.get("/api/jobs")
 def list_jobs(principal: dict = Depends(_authenticate)) -> dict:
     return {"jobs": [{**job, "job_id": job["id"]} for job in job_store.list_for(principal)]}
+
+
+from web.reviews import router as review_router
+app.include_router(review_router)

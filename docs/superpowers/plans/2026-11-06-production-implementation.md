@@ -136,9 +136,9 @@ Serve private-pilot claimant users and trained reviewers. A completed model job 
 ### T06: Review API and approved export (controller; T01,T04,T05)
 **Files:** new `web/reviews.py`, `tests/test_review_api.py`; integrate API.
 **Interfaces:** routes from Design contract; SHA-256 fingerprint of canonical private snapshot plus registry fingerprint. Initialize idempotently from generated report. Edited letter max 50000 chars; validate using stored original snapshots. Reviewer/admin only may decide, requiring mutation CSRF/Origin, three checks, unchanged source fingerprint/current version and valid evidence. Owners may edit their own drafts. A missing snapshot refuses approval.
-- [ ] RED TestClient tests: owner editing, reviewer exact-version approval, claimant refusal, stale 409, invalid evidence 422, edit invalidates export, cross-org denial, changed/missing source refusal and approved-download byte equality.
-- [ ] Implement authorized review queue/routes; return actionable validation issues; preserve model Judge assessment separately from human decision.
-- [ ] Focused/full suite GREEN; commit `feat: add evidence-checked review and approved letter export`.
+- [x] RED TestClient tests: owner editing, reviewer exact-version approval, claimant refusal, stale 409, invalid evidence 422, edit invalidates export, cross-org denial, changed/missing source refusal and approved-download byte equality.
+- [x] Implement authorized review queue/routes; return actionable validation issues; preserve model Judge assessment separately from human decision.
+- [x] Focused/full suite GREEN; commit `feat: add evidence-checked review and approved letter export`.
 
 ### T07: Account/case/review UI (frontend agent after API contract stabilizes)
 **Files:** existing App/CSS, focused components/client tests, frontend Dockerfile, Compose/nginx integration (coordinate ownership with controller).
@@ -212,7 +212,8 @@ Serve private-pilot claimant users and trained reviewers. A completed model job 
 | T03 | complete module | 27 identity tests; API integration T04 pending |
 | T04 | complete locally | case reads/downloads scoped by owner/org; full integrated suite recorded in ledger |
 | T05 | complete module | 30 review transaction tests |
-| T06–T07 | pending | review API/frontend |
+| T06 | complete locally | version/source-bound API; approval race regression fixed |
+| T07 | in progress | frontend module agent |
 | T08 | pending | private lifecycle/operations |
 | T09 | pending | audit code; legal sign-off external |
 | T10 | pending | offline CI; live/representative acceptance separate |

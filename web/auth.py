@@ -82,7 +82,7 @@ async def login(request: Request):
         data = json.loads(body)
         if not isinstance(data, dict) or not isinstance(data.get('username'), str) or not isinstance(data.get('password'), str):
             raise ValueError()
-    except (ValueError, UnicodeError):
+    except (ValueError, UnicodeError, RecursionError):
         raise HTTPException(401, INVALID_LOGIN, headers=NO_STORE) from None
     try:
         public, token, csrf = await run_in_threadpool(get_store().login, data['username'], data['password'])

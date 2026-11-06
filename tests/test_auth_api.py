@@ -124,3 +124,12 @@ def test_deeply_nested_json_is_a_generic_invalid_login(auth):
     response = client.post('/api/auth/login', headers={'Origin': ORIGIN}, content=b'[' * 1500 + b'0' + b']' * 1500)
     assert response.status_code == 401
     assert response.json() == {'detail': 'Invalid username or password'}
+
+
+def test_decoder_recursion_is_a_generic_invalid_login(auth, monkeypatch):
+    module, _, client = auth
+    def too_deep(*args, **kwargs):
+        raise RecursionError("synthetic decoder limit")
+    monkeypatch.setattr(module.json, "loads", too_deep)
+    response = client.post('/api/auth/login', headers={'Origin': ORIGIN}, content=b'{}')
+    assert response.status_code == 401
