@@ -18,3 +18,7 @@
 
 - T03 and T05 module agents stopped on usage limits before commits; controller inspected files and verified tests directly. T03 27 passed; T05 30 passed after fixing interrupted test parameter and reproducing/fixing bool/float revision acceptance RED to GREEN.
 - T03 module complete: named invite-only accounts, actual scrypt, digest sessions, reset/disable revocation, exact Origin/CSRF, cookie security, persisted throttle and hidden-prompt CLI. T05 module complete: immutable mutations, optimistic concurrency, exact approval hashes and durable deletion fences. Integration/independent security review remain pending; no real accounts/data created.
+
+- T03 committed 14fdd19; T05 committed ab935a8 (module contracts and test evidence included).
+- T04: account auth mounted; shared keys cannot bypass cookie identity, all case reads/downloads authorize owner/org, unowned legacy rows hidden, per-job internal namespaces isolate display labels, status/report projections remove internal paths/tracebacks. Case-access regressions observed RED then focused API/JobStore/access 9 passed.
+- T04 integrated verification: complete full suite 190 passed in 25.74s. No provider calls or real accounts were used.

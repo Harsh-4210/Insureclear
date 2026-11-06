@@ -53,6 +53,12 @@ class JobStore:
                 """
             )
 
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(jobs)")}
+            for column in ("owner_id", "org_id", "case_label"):
+                if column not in columns:
+                    connection.execute(f"ALTER TABLE jobs ADD COLUMN {column} TEXT")
+            connection.execute("CREATE INDEX IF NOT EXISTS job_owners ON jobs(org_id, owner_id, created_at)")
+
     @contextmanager
     def worker_lock(self):
         """Hold the single-worker process lock through execution and upload cleanup."""
@@ -96,23 +102,39 @@ class JobStore:
     def _now() -> str:
         return datetime.now(timezone.utc).isoformat()
 
-    def create(self, job_id: str, payload: dict[str, Any], mode: str, case_id: str, fresh_run: bool) -> None:
+    def create(self, job_id: str, payload: dict[str, Any], mode: str, case_id: str, fresh_run: bool, owner_id: str | None = None, org_id: str | None = None, case_label: str | None = None) -> None:
         now = self._now()
         with self._lock, self._connect() as connection:
             connection.execute(
                 """
                 INSERT INTO jobs (
                     id, payload_json, status, progress, stage, message, case_id,
-                    mode, fresh_run, created_at, updated_at
-                ) VALUES (?, ?, 'queued', 0, 'queued', 'Job queued', ?, ?, ?, ?, ?)
+                    mode, fresh_run, created_at, updated_at, owner_id, org_id, case_label
+                ) VALUES (?, ?, 'queued', 0, 'queued', 'Job queued', ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (job_id, json.dumps(payload), case_id, mode, int(fresh_run), now, now),
+                (job_id, json.dumps(payload), case_id, mode, int(fresh_run), now, now, owner_id, org_id, case_label),
             )
 
     def get(self, job_id: str) -> dict[str, Any] | None:
         with self._connect() as connection:
             row = connection.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         return self._row_to_job(row) if row else None
+
+    def list_for(self, principal: dict) -> list[dict]:
+        columns = "id,status,progress,stage,message,case_id,case_label,mode,created_at,updated_at,owner_id,org_id"
+        if principal.get("legacy"):
+            where, values = "1=1", ()
+        elif principal.get("role") in {"reviewer", "admin"}:
+            where, values = "org_id = ? AND owner_id IS NOT NULL", (principal["org_id"],)
+        else:
+            where, values = "org_id = ? AND owner_id = ?", (principal["org_id"], principal["user_id"])
+        with self._connect() as db:
+            return [dict(row) for row in db.execute(f"SELECT {columns} FROM jobs WHERE {where} ORDER BY created_at DESC LIMIT 200", values)]
+
+    def get_payload(self, job_id: str) -> dict | None:
+        with self._connect() as db:
+            row = db.execute("SELECT payload_json FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        return json.loads(row[0]) if row else None
 
     def update(self, job_id: str, **fields: Any) -> None:
         allowed = {
@@ -153,6 +175,7 @@ class JobStore:
     def _row_to_job(row: sqlite3.Row) -> dict[str, Any]:
         result = dict(row)
         result["fresh_run"] = bool(result["fresh_run"])
-        result["result"] = json.loads(result.pop("result_json")) if result.get("result_json") else None
+        raw_result = result.pop("result_json", None)
+        result["result"] = json.loads(raw_result) if raw_result else None
         result.pop("payload_json", None)
         return result

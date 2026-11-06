@@ -120,9 +120,9 @@ Serve private-pilot claimant users and trained reviewers. A completed model job 
 ### T04: Ownership on every case route (controller; T03)
 **Files:** `tools/job_store.py`, `web/api.py`, API tests, new `tests/test_case_access.py`.
 **Interfaces:** backward-compatible `JobStore.create(...,owner_id=None,org_id=None)`; nullable migration; `list_for(principal)->list`; internal-only `get_payload(job_id)->dict`. `get_authorized_job(job_id,principal)` enforces claimant owner or same-org reviewer/admin. Account mode is `INSURECLEAR_AUTH_MODE=accounts`; legacy separately explicit.
-- [ ] RED tests deny Alice access to Bob status/report/letter/download/review/delete, reviewer cross-org access, account shared-key bypass and legacy unowned rows; same display labels use isolated internal case IDs.
-- [ ] Mount auth routes, protect all job routes, namespace by random job ID, separate display label; status/list never expose payload, internal paths, raw traceback. Preserve queue recovery behavior.
-- [ ] Existing/new API/full suite GREEN; commit `feat: enforce case ownership across job routes`.
+- [x] RED tests deny Alice access to Bob status/report/letter/download/review/delete, reviewer cross-org access, account shared-key bypass and legacy unowned rows; same display labels use isolated internal case IDs.
+- [x] Mount auth routes, protect all job routes, namespace by random job ID, separate display label; status/list never expose payload, internal paths, raw traceback. Preserve queue recovery behavior.
+- [x] Existing/new API/full suite GREEN; commit `feat: enforce case ownership across job routes`.
 
 ## Phase 3 — Durable human review and product flow
 
@@ -210,7 +210,7 @@ Serve private-pilot claimant users and trained reviewers. A completed model job 
 | T00 | complete | 120 tests; baseline caed8d4; builder findings resolved; plan commit in Git history |
 | T01–T02 | complete locally | 129 pipeline/evidence tests passed; semantic/live acceptance remains T10 |
 | T03 | complete module | 27 identity tests; API integration T04 pending |
-| T04 | in progress | ownership regressions RED |
+| T04 | complete locally | case reads/downloads scoped by owner/org; full integrated suite recorded in ledger |
 | T05 | complete module | 30 review transaction tests |
 | T06–T07 | pending | review API/frontend |
 | T08 | pending | private lifecycle/operations |

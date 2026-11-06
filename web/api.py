@@ -34,6 +34,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from orchestrator.main import run_pipeline  # noqa: E402
 from tools.io_utils import clear_session  # noqa: E402
 from tools.job_store import JobStore  # noqa: E402
+from web import auth  # noqa: E402
 
 
 
@@ -47,6 +48,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="InsureClear API", version="1.1.0", lifespan=lifespan)
+app.include_router(auth.router)
 job_store = JobStore(os.getenv("INSURECLEAR_JOB_DB", str(PROJECT_ROOT / "data" / "jobs.sqlite3")))
 
 allowed_origins = [
@@ -61,9 +63,9 @@ allowed_origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_credentials=False,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "X-API-Key"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type", "X-API-Key", "X-CSRF-Token"],
 )
 
 _worker_stop = threading.Event()
@@ -92,28 +94,69 @@ def _load_sample_text(filename: str) -> str:
     return content
 
 
-def _authenticate(x_api_key: str | None = Header(default=None)) -> None:
+def _authenticate(request: Request, x_api_key: str | None = Header(default=None)) -> dict:
+    mode = os.getenv("INSURECLEAR_AUTH_MODE", "legacy").lower()
+    if mode == "accounts":
+        return auth.current_principal(request)
+    if mode != "legacy":
+        raise HTTPException(503, "Authentication mode is not configured")
     configured_key = os.getenv("INSURECLEAR_API_KEY")
     auth_required = os.getenv("INSURECLEAR_REQUIRE_AUTH", "false").lower() == "true"
     if auth_required and not configured_key:
-        raise HTTPException(status_code=503, detail="API authentication is not configured")
+        raise HTTPException(503, "API authentication is not configured")
     if configured_key and not x_api_key:
-        raise HTTPException(status_code=401, detail="X-API-Key header is required")
+        raise HTTPException(401, "X-API-Key header is required")
     if configured_key and not hmac.compare_digest(x_api_key or "", configured_key):
-        raise HTTPException(status_code=403, detail="Invalid API key")
+        raise HTTPException(403, "Invalid API key")
+    return {"user_id": "legacy", "org_id": "legacy", "role": "admin", "legacy": True}
 
 
-def _guard(request: Request, x_api_key: str | None = Header(default=None)) -> None:
-    _authenticate(x_api_key)
+def _mutation(request: Request, principal: dict) -> None:
+    if not principal.get("legacy"):
+        auth.require_mutation(request, principal)
 
-    client_ip = request.client.host if request.client else "unknown"
+
+def _guard(request: Request, x_api_key: str | None = Header(default=None)) -> dict:
+    principal = _authenticate(request, x_api_key)
+    _mutation(request, principal)
+    identity = principal["user_id"] if not principal.get("legacy") else (request.client.host if request.client else "unknown")
     now = time.monotonic()
     with _rate_lock:
-        recent = [timestamp for timestamp in _rate_windows.get(client_ip, []) if now - timestamp < RATE_LIMIT_WINDOW_SECONDS]
+        recent = [timestamp for timestamp in _rate_windows.get(identity, []) if now - timestamp < RATE_LIMIT_WINDOW_SECONDS]
         if len(recent) >= RATE_LIMIT_REQUESTS:
-            raise HTTPException(status_code=429, detail="Rate limit exceeded")
-        recent.append(now)
-        _rate_windows[client_ip] = recent
+            raise HTTPException(429, "Rate limit exceeded", headers={"Retry-After": str(RATE_LIMIT_WINDOW_SECONDS)})
+        _rate_windows[identity] = recent + [now]
+    return principal
+
+
+def get_authorized_job(job_id: str, principal: dict) -> dict:
+    job = _job_snapshot(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if not principal.get("legacy"):
+        same_org = job.get("org_id") == principal["org_id"] and job.get("owner_id") is not None
+        allowed = same_org and (job.get("owner_id") == principal["user_id"] or principal["role"] in {"reviewer", "admin"})
+        if not allowed:
+            raise HTTPException(404, "Job not found")
+    return job
+
+
+def _public_report(report: dict) -> dict:
+    report = copy.deepcopy(report)
+    report.pop("artifacts", None)
+    report.pop("inputs", None)
+    return report
+
+
+def _public_job(job: dict) -> dict:
+    job = copy.deepcopy(job)
+    job.pop("traceback", None)
+    if job.get("error"):
+        job["error"] = "Analysis failed. Contact the operator with the job ID."
+    if job.get("result"):
+        job["result"] = _public_report(job["result"])
+    job["job_id"] = job["id"]
+    return job
 
 
 def _progress_callback(job_id: str):
@@ -225,7 +268,7 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/api/analyze", dependencies=[Depends(_guard)])
+@app.post("/api/analyze")
 async def analyze(
     mode: str = Form(...),
     case_id: str = Form(""),
@@ -234,6 +277,7 @@ async def analyze(
     policy_text: str | None = Form(None),
     denial_pdf: UploadFile | None = File(None),
     policy_pdf: UploadFile | None = File(None),
+    principal: dict = Depends(_guard),
 ) -> dict[str, Any]:
     normalized_mode = mode.strip().lower()
     if normalized_mode not in {"demo", "text", "pdf"}:
@@ -244,6 +288,9 @@ async def analyze(
         raise HTTPException(status_code=400, detail="case_id contains unsupported characters")
 
     job_id = uuid.uuid4().hex
+    case_label = resolved_case_id
+    if not principal.get("legacy"):
+        resolved_case_id = "job_" + job_id
     payload: dict[str, Any] = {
         "case_id": resolved_case_id,
         "fresh_run": fresh_run,
@@ -280,7 +327,9 @@ async def analyze(
             shutil.rmtree(input_dir, ignore_errors=True)
             raise
 
-    job_store.create(job_id, payload, normalized_mode, resolved_case_id, fresh_run)
+    job_store.create(job_id, payload, normalized_mode, resolved_case_id, fresh_run,
+                     owner_id=None if principal.get("legacy") else principal["user_id"],
+                     org_id=None if principal.get("legacy") else principal["org_id"], case_label=case_label)
     _start_worker()
     return {
         "job_id": job_id,
@@ -290,27 +339,27 @@ async def analyze(
     }
 
 
-@app.get("/api/jobs/{job_id}", dependencies=[Depends(_authenticate)])
-def get_job(job_id: str) -> dict[str, Any]:
-    job = _job_snapshot(job_id)
+@app.get("/api/jobs/{job_id}")
+def get_job(job_id: str, principal: dict = Depends(_authenticate)) -> dict[str, Any]:
+    job = get_authorized_job(job_id, principal)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return job
+    return _public_job(job)
 
 
-@app.get("/api/jobs/{job_id}/report", dependencies=[Depends(_authenticate)])
-def get_job_report(job_id: str) -> dict[str, Any]:
-    job = _job_snapshot(job_id)
+@app.get("/api/jobs/{job_id}/report")
+def get_job_report(job_id: str, principal: dict = Depends(_authenticate)) -> dict[str, Any]:
+    job = get_authorized_job(job_id, principal)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     if not job.get("result"):
         raise HTTPException(status_code=409, detail="Job has not completed yet")
-    return job["result"]
+    return _public_report(job["result"])
 
 
-@app.get("/api/jobs/{job_id}/letter", dependencies=[Depends(_authenticate)])
-def get_job_letter(job_id: str) -> PlainTextResponse:
-    job = _job_snapshot(job_id)
+@app.get("/api/jobs/{job_id}/letter")
+def get_job_letter(job_id: str, principal: dict = Depends(_authenticate)) -> PlainTextResponse:
+    job = get_authorized_job(job_id, principal)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     if not job.get("result"):
@@ -318,9 +367,9 @@ def get_job_letter(job_id: str) -> PlainTextResponse:
     return PlainTextResponse(job["result"].get("appeal_letter", ""))
 
 
-@app.get("/api/jobs/{job_id}/download/report", dependencies=[Depends(_authenticate)])
-def download_report(job_id: str) -> FileResponse:
-    job = _job_snapshot(job_id)
+@app.get("/api/jobs/{job_id}/download/report")
+def download_report(job_id: str, principal: dict = Depends(_authenticate)) -> FileResponse:
+    job = get_authorized_job(job_id, principal)
     if not job or not job.get("result"):
         raise HTTPException(status_code=404, detail="Completed job not found")
     report_path = Path(job["result"].get("artifacts", {}).get("full_report_path", ""))
@@ -329,12 +378,17 @@ def download_report(job_id: str) -> FileResponse:
     return FileResponse(report_path, media_type="application/json", filename=report_path.name)
 
 
-@app.get("/api/jobs/{job_id}/download/letter", dependencies=[Depends(_authenticate)])
-def download_letter(job_id: str) -> FileResponse:
-    job = _job_snapshot(job_id)
+@app.get("/api/jobs/{job_id}/download/letter")
+def download_letter(job_id: str, principal: dict = Depends(_authenticate)) -> FileResponse:
+    job = get_authorized_job(job_id, principal)
     if not job or not job.get("result"):
         raise HTTPException(status_code=404, detail="Completed job not found")
     letter_path = Path(job["result"].get("artifacts", {}).get("appeal_letter_path", ""))
     if not letter_path.is_file():
         raise HTTPException(status_code=404, detail="Appeal letter file not found")
     return FileResponse(letter_path, media_type="text/plain", filename=letter_path.name)
+
+
+@app.get("/api/jobs")
+def list_jobs(principal: dict = Depends(_authenticate)) -> dict:
+    return {"jobs": [{**job, "job_id": job["id"]} for job in job_store.list_for(principal)]}
