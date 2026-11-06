@@ -803,3 +803,23 @@ pre {
     align-items: flex-start;
   }
 }
+
+/* Account and review workflow follows the existing panel vocabulary. */
+.login-wrap { max-width: 620px; padding-top: 12vh; }
+.login-wrap h1 { font-size: clamp(1.8rem, 5vw, 2.6rem); }
+.login-form { display: grid; gap: 1rem; margin: 1.5rem 0; }
+.account-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; color: var(--muted); }
+.cases-panel { padding: 1.5rem; margin: 1.5rem 0; }
+.case-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: .75rem; }
+.case-list button { overflow-wrap: anywhere; }
+.review-editor { display: grid; gap: 1rem; }
+.review-note { min-height: 90px; }
+.review-confirmations { display: grid; gap: .8rem; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1rem; min-width: 0; }
+.review-confirmations legend { color: var(--muted); }
+.review-event { padding: 1rem 0; border-top: 1px solid var(--border); }
+.validation-panel { padding: 1rem; background: var(--panel-strong); border-radius: var(--radius-sm); overflow-wrap: anywhere; }
+.inline-error { white-space: pre-wrap; overflow-wrap: anywhere; }
+.inline-error button { display: block; margin-top: .75rem; }
+button:disabled { cursor: not-allowed; opacity: .5; }
+button:focus-visible, summary:focus-visible { outline: 2px solid var(--info); outline-offset: 4px; }
+@media (max-width: 600px) { .account-bar { align-items: flex-start; } .review-editor .detail-header { flex-wrap: wrap; } }

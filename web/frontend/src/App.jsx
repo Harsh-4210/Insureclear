@@ -1,15 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '')
-const API_KEY = import.meta.env.VITE_API_KEY || ''
-
-const apiFetch = (url, options = {}) => fetch(url, {
-  ...options,
-  headers: {
-    ...(options.headers || {}),
-    ...(API_KEY ? { 'X-API-Key': API_KEY } : {}),
-  },
-})
+import { startJobPolling } from './client'
+import AccountSession, { CaseList } from './AccountSession'
+import ReviewEditor from './ReviewEditor'
 
 const MODES = [
   {
@@ -44,14 +37,14 @@ const STAGES = [
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'letter', label: 'Appeal Letter' },
+  { id: 'letter', label: 'Draft & Human Review' },
   { id: 'analysis', label: 'Case Analysis' },
   { id: 'irdai', label: 'IRDAI Findings' },
-  { id: 'review', label: 'Quality Review' },
+  { id: 'review', label: 'Model Quality' },
   { id: 'report', label: 'Full Report' },
 ]
 
-function App() {
+function Workspace({ api, user, logout }) {
   const [mode, setMode] = useState('demo')
   const [caseId, setCaseId] = useState('')
   const [freshRun, setFreshRun] = useState(false)
@@ -63,6 +56,8 @@ function App() {
   const [activeTab, setActiveTab] = useState('overview')
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [pollError, setPollError] = useState('')
+  const [retryPoll, setRetryPoll] = useState(0)
 
   const result = job?.result ?? null
   const status = job?.status ?? 'idle'
@@ -77,33 +72,21 @@ function App() {
   const reportJson = useMemo(() => JSON.stringify(result ?? {}, null, 2), [result])
 
   useEffect(() => {
-    if (!job?.job_id || ['completed', 'failed'].includes(job.status)) {
-      return undefined
-    }
+    setPollError('')
+    if (!job?.job_id || ['completed', 'failed', 'cancelled', 'timed_out'].includes(job.status)) return undefined
+    return startJobPolling({
+      load: () => api.request(`/api/jobs/${encodeURIComponent(job.job_id)}`),
+      onJob: setJob,
+      onError: setPollError,
+    })
+  }, [api, job?.job_id, job?.status, retryPoll])
 
-    let cancelled = false
-    const pollJob = async () => {
-      try {
-        const response = await apiFetch(`${API_BASE}/api/jobs/${job.job_id}`)
-        if (!response.ok) {
-          return
-        }
-        const data = await response.json()
-        if (!cancelled) {
-          setJob(data)
-        }
-      } catch {
-        // Keep polling silently. The UI should not flicker on transient network failures.
-      }
-    }
-
-    pollJob()
-    const timer = window.setInterval(pollJob, 2000)
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-    }
-  }, [job?.job_id, job?.status])
+  const openCase = async id => {
+    setIsSubmitting(true); setError(''); setJob(null)
+    try { setJob(await api.request(`/api/jobs/${encodeURIComponent(id)}`)); setActiveTab('overview') }
+    catch (e) { if (e.name !== 'AbortError') setError(e.message) }
+    finally { setIsSubmitting(false) }
+  }
 
   const visibleStageIndex = STAGES.findIndex((stage) => stage.id === currentStage)
 
@@ -135,15 +118,7 @@ function App() {
         formData.append('policy_pdf', policyFile)
       }
 
-      const response = await apiFetch(`${API_BASE}/api/analyze`, {
-        method: 'POST',
-        body: formData,
-      })
-
-      const payload = await response.json().catch(() => ({}))
-      if (!response.ok) {
-        throw new Error(payload.detail || 'Unable to start the analysis job.')
-      }
+      const payload = await api.request('/api/analyze', { method: 'POST', body: formData })
 
       setJob({
         ...payload,
@@ -187,12 +162,13 @@ function App() {
       <div className="aurora aurora-right" />
 
       <main className="page-wrap">
+        <div className="account-bar"><span>{user.username || user.user_id} · {user.role}</span><button className="secondary-btn" onClick={logout}>Sign out</button></div>
         <section className="hero card">
           <div className="hero-copy">
             <div className="eyebrow">InsureClear</div>
             <h1>Premium claim appeal intelligence for Indian health insurance cases.</h1>
             <p>
-              Upload denial documents, inspect policy risk, and generate a legally grounded appeal with live pipeline visibility.
+              Upload denial documents, inspect policy evidence, and prepare an appeal draft for human review.
             </p>
             <div className="hero-badges">
               <span>IRDAI-cited</span>
@@ -208,6 +184,7 @@ function App() {
           </div>
         </section>
 
+        <CaseList api={api} refreshKey={`${job?.job_id || ''}:${status}`} onSelect={openCase} disabled={isSubmitting} />
         <section className="layout-grid">
           <section className="card input-panel">
             <div className="section-heading">
@@ -215,7 +192,7 @@ function App() {
                 <h2>Case setup</h2>
                 <p>Choose a mode, then submit the cleanest source material you have.</p>
               </div>
-              <span className="pill">API: {API_BASE}</span>
+              <span className="pill">Private case</span>
             </div>
 
             <div className="mode-grid">
@@ -234,12 +211,12 @@ function App() {
 
             <div className="form-grid">
               <label>
-                Case ID
+                Case label (optional)
                 <input
                   type="text"
                   value={caseId}
                   onChange={(event) => setCaseId(event.target.value)}
-                  placeholder="Optional: case_001, client-name, etc."
+                  placeholder="A label to help you find this case"
                 />
               </label>
 
@@ -317,7 +294,8 @@ function App() {
               </button>
             </div>
 
-            {error && <div className="inline-error">{error}</div>}
+            {error && <div className="inline-error" role="alert">{error}</div>}
+            {pollError && <div className="inline-error" role="alert">{pollError}<button className="secondary-btn" onClick={() => setRetryPoll(n => n + 1)}>Retry updates</button></div>}
 
             <div className="workflow-card">
               <div className="workflow-header">
@@ -440,21 +418,24 @@ function App() {
             )}
 
             {activeTab === 'letter' && (
-              <div className="detail-card">
+              <div className="detail-stack">
+                {isCompleted && <ReviewEditor key={job.job_id} api={api} jobId={job.job_id} user={user} />}
+                <div className="detail-card">
                 <div className="detail-header">
-                  <h3>Appeal letter</h3>
+                  <h3>Generated draft letter</h3>
                   {result && (
                     <div className="inline-actions">
-                      <button type="button" className="ghost-btn" onClick={() => downloadBlob('appeal_letter.txt', letter, 'text/plain')}>
-                        Download TXT
+                      <button type="button" className="ghost-btn" onClick={() => downloadBlob('draft-appeal-letter.txt', letter, 'text/plain')}>
+                        Download generated draft TXT
                       </button>
-                      <button type="button" className="ghost-btn" onClick={() => downloadBlob('appeal_report.json', reportJson, 'application/json')}>
-                        Download JSON
+                      <button type="button" className="ghost-btn" onClick={() => downloadBlob('draft-appeal-report.json', reportJson, 'application/json')}>
+                        Download draft report JSON
                       </button>
                     </div>
                   )}
                 </div>
                 <pre className="letter-block">{letter || 'Your generated appeal letter will appear here.'}</pre>
+                </div>
               </div>
             )}
 
@@ -536,7 +517,7 @@ function App() {
                 </div>
 
                 <div className="detail-card">
-                  <h3>Judge notes</h3>
+                  <h3>Model quality assessment</h3>
                   <div className="bullet-list">
                     {(result?.judge?.missing_elements ?? []).map((item) => (
                       <div key={item} className="bullet-item">Missing: {item}</div>
@@ -563,14 +544,17 @@ function App() {
             {status === 'failed' && (
               <div className="inline-error" style={{ marginTop: 16 }}>
                 {job?.error || 'The pipeline failed.'}
-                {job?.traceback && <pre className="traceback">{job.traceback}</pre>}
+
               </div>
             )}
 
+            {status === 'timed_out' && <p role="alert">This case reached its time limit. Start a new case to try again.</p>}
+            {status === 'cancelled' && <p role="status">This case was cancelled. Start a new case to run again.</p>}
+
             {isCompleted && (
               <div className="completion-banner">
-                <strong>{recommendation === 'REVIEW_REQUIRED' ? 'Draft ready for human review.' : 'Pipeline complete.'}</strong>
-                <span>Review the findings and source coverage before using the downloaded appeal.</span>
+                <strong>Generated draft ready for human review.</strong>
+                <span>Open Draft & Human Review to edit, check evidence, and record a reviewer decision.</span>
               </div>
             )}
           </section>
@@ -580,4 +564,6 @@ function App() {
   )
 }
 
-export default App
+export default function App() {
+  return <AccountSession>{({ api, user, logout }) => <Workspace key={user.user_id} api={api} user={user} logout={logout} />}</AccountSession>
+}

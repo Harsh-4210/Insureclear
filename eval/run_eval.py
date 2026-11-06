@@ -1,6 +1,6 @@
 """
 Evaluation Runner
-Runs the real pipeline (live Gemini calls) on every case in eval/cases.py,
+Runs the real pipeline (live configured-provider calls) on every case in eval/cases.py,
 scores each report with eval/score.py, and writes:
 
   eval/results/<run_id>/<case_id>.json   full report + scores per case
@@ -10,10 +10,11 @@ scores each report with eval/score.py, and writes:
 Usage:
   python eval/run_eval.py                 # all cases
   python eval/run_eval.py --only c01 c05  # cases whose id starts with these
-  python eval/run_eval.py --resume <run_id>  # skip cases already scored
+  python eval/run_eval.py --resume <run_id>  # verify manifests and rescore saved reports
 """
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -33,12 +34,92 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from eval.cases import CASES, build_documents
 from eval.score import score_case, summarise
 from orchestrator.main import run_pipeline
+from orchestrator import main as pipeline_module
+from tools.document_context import context_config
+from tools.runtime_control import RuntimeControl
 from tools import llm_client
 from tools.io_utils import clear_session
 from tools.regulatory_registry import load_registry
 
 RESULTS_DIR = PROJECT_ROOT / "eval" / "results"
 MIN_SECONDS_BETWEEN_CALLS = 13  # Gemini free tier allows 5 requests per minute
+
+
+MANIFEST_SCHEMA_VERSION = 1
+GENERATION_SOURCE_PATHS = (
+    "orchestrator/main.py",
+    "tools/agent_validation.py",
+    "tools/document_context.py",
+    "tools/evidence_validator.py",
+    "tools/policy_evidence.py",
+    "tools/irdai_knowledge.py",
+    "tools/regulatory_registry.py",
+    "tools/llm_client.py",
+    "tools/io_utils.py",
+    "tools/pdf_reader.py",
+    "tools/runtime_control.py",
+)
+USAGE_COUNTERS = ("total_calls", "total_tokens", "total_retries", "total_429s")
+
+
+def _canonical_json(value) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def build_evaluation_manifest(case: dict, denial: str, policy: str) -> dict:
+    """Bind exact generated documents and answer data to the generation contract.
+
+    Hash code that generates prompts, validates evidence and retrieves sources.
+    Deliberately exclude the scorer: matching reports may be rescored, retaining
+    their old scores. Never include provider keys or private environment values.
+    """
+    source_paths = set(GENERATION_SOURCE_PATHS)
+    source_paths.update(path.relative_to(PROJECT_ROOT).as_posix() for path in (PROJECT_ROOT / "agents").glob("*.py"))
+    source_hashes = {
+        name: hashlib.sha256((PROJECT_ROOT / name).read_bytes()).hexdigest()
+        for name in sorted(source_paths)
+    }
+    runtime = RuntimeControl()
+    config = {
+        "context": context_config(),
+        "case_timeout_seconds": runtime.seconds,
+        "case_max_calls": runtime.max_calls,
+        "case_max_tokens": runtime.max_tokens,
+        "max_revisions": pipeline_module.MAX_REVISIONS,
+        "min_approve_score": pipeline_module.MIN_APPROVE_SCORE,
+    }
+    if llm_client.PROVIDER == "groq":
+        config["reasoning_token_budget"] = llm_client.GROQ_REASONING_TOKEN_BUDGET
+        config["max_output_tokens"] = llm_client.GROQ_MAX_OUTPUT_TOKENS
+    return {
+        "schema_version": MANIFEST_SCHEMA_VERSION,
+        "case_id": case["id"],
+        "denial_sha256": _sha256(denial),
+        "policy_sha256": _sha256(policy),
+        "case_sha256": _sha256(_canonical_json(case)),
+        "answer_sha256": _sha256(_canonical_json(case["answer"])),
+        "generation_source_sha256": source_hashes,
+        "registry_fingerprint": load_registry().fingerprint,
+        "model": {"provider": llm_client.PROVIDER, "name": llm_client.MODEL_NAME},
+        "reasoning_effort": llm_client.GROQ_REASONING_EFFORT if llm_client.PROVIDER == "groq" else None,
+        "config": config,
+    }
+
+
+def verify_evaluation_manifest(saved: dict, expected: dict) -> None:
+    """Fail closed; callers must not retroactively bless historical reports."""
+    manifest = saved.get("manifest") if isinstance(saved, dict) else None
+    if not isinstance(manifest, dict) or _canonical_json(manifest) != _canonical_json(expected):
+        raise ValueError("Evaluation manifest missing or changed; preserve this run and start a fresh evaluation")
+
+
+def _usage_delta(before: dict) -> dict:
+    after = llm_client.get_stats()
+    return {name: after.get(name, 0) - before.get(name, 0) for name in USAGE_COUNTERS}
 
 
 def _throttle_gemini() -> None:
@@ -95,7 +176,7 @@ def _tick(value) -> str:
     return "yes" if value else "no"
 
 
-def write_summary(run_dir: Path, results: list[dict], failures: list[dict], reused_cases: int = 0) -> dict:
+def write_summary(run_dir: Path, results: list[dict], failures: list[dict], reused_cases: int = 0, usage: dict | None = None) -> dict:
     summary = summarise(results)
     summary["reused_cases"] = reused_cases
     summary["new_cases"] = len(results) - reused_cases
@@ -104,8 +185,8 @@ def write_summary(run_dir: Path, results: list[dict], failures: list[dict], reus
     summary["failures"] = failures
     summary["model"] = f"{llm_client.PROVIDER}:{llm_client.MODEL_NAME}"
     summary["reasoning_effort"] = llm_client.GROQ_REASONING_EFFORT if llm_client.PROVIDER == "groq" else None
-    summary["total_tokens"] = llm_client.get_stats()["total_tokens"]
-    llm_stats = llm_client.get_stats()
+    llm_stats = usage if usage is not None else {name: 0 for name in USAGE_COUNTERS}
+    summary["total_tokens"] = llm_stats["total_tokens"]
     summary["llm_calls"] = llm_stats["total_calls"]
     summary["llm_retries"] = llm_stats["total_retries"]
     summary["llm_429s"] = llm_stats["total_429s"]
@@ -189,7 +270,7 @@ def main() -> None:
         help="Fail (exit 1) when unsupported-claim case rate exceeds this value",
     )
     args = parser.parse_args()
-    _throttle_gemini()
+    invocation_usage = llm_client.get_stats()
 
     run_id = args.resume or datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = RESULTS_DIR / run_id
@@ -199,14 +280,28 @@ def main() -> None:
     if args.only:
         cases = [c for c in CASES if any(c["id"].startswith(p) for p in args.only)]
 
+    # Preflight every selected saved report before scoring or dispatching ANY
+    # case. A mismatched later report must not incur earlier provider calls.
+    prepared = []
+    for case in cases:
+        denial, policy = build_documents(case)
+        case_file = run_dir / f"{case['id']}.json"
+        try:
+            manifest = build_evaluation_manifest(case, denial, policy)
+            saved = json.loads(case_file.read_text(encoding="utf-8")) if case_file.exists() else None
+            if case_file.exists():
+                verify_evaluation_manifest(saved, manifest)
+        except (ValueError, KeyError, TypeError, OSError) as error:
+            raise SystemExit(f"[eval] {case['id']}: manifest preflight failed: {error}") from error
+        prepared.append((case, denial, policy, case_file, manifest, saved))
+
+    if any(saved is None for _, _, _, _, _, saved in prepared):
+        _throttle_gemini()
     results = []
     failures = []
     reused_cases = 0
-    for case in cases:
-        case_file = run_dir / f"{case['id']}.json"
-        if case_file.exists():
-            saved = json.loads(case_file.read_text(encoding="utf-8"))
-            denial, policy = build_documents(case)
+    for case, denial, policy, case_file, manifest, saved in prepared:
+        if saved is not None:
             try:
                 score = score_case(saved["report"], case, evaluation_sources(denial, policy, saved["report"]))
             except (ValueError, KeyError, TypeError) as error:
@@ -223,7 +318,7 @@ def main() -> None:
             print(f"[eval] {case['id']}: saved report verified and rescored, no provider call")
             continue
 
-        denial, policy = build_documents(case)
+        case_usage = llm_client.get_stats()
         case_id = f"eval_{run_id}_{case['id']}"
         try:
             report = run_pipeline(
@@ -240,6 +335,8 @@ def main() -> None:
                 "error": str(e),
                 "exception_type": type(e).__name__,
                 "traceback": traceback.format_exc(),
+                "manifest": manifest,
+                "usage": _usage_delta(case_usage),
             }
             failures.append(failure)
             (run_dir / f"{case['id']}.error.txt").write_text(
@@ -251,14 +348,14 @@ def main() -> None:
 
         score = score_case(report, case, evaluation_sources(denial, policy, report))
         case_file.write_text(
-            json.dumps({"score": score, "report": report, "score_schema_version": 2}, indent=2, ensure_ascii=False, default=str),
+            json.dumps({"score": score, "report": report, "score_schema_version": 2, "manifest": manifest, "usage": _usage_delta(case_usage)}, indent=2, ensure_ascii=False, default=str),
             encoding="utf-8",
         )
         results.append(score)
         print(f"[eval] {case['id']}: scored")
         time.sleep(2)
 
-    summary = write_summary(run_dir, results, failures, reused_cases)
+    summary = write_summary(run_dir, results, failures, reused_cases, _usage_delta(invocation_usage))
     print(json.dumps(summary, indent=2))
     print(f"\nResults: {run_dir}")
     gate_failures = check_regression_gates(

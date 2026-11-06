@@ -6,23 +6,32 @@ services:
     env_file:
       - .env
     environment:
-      INSURECLEAR_CORS_ORIGINS: http://localhost:8080
+      INSURECLEAR_AUTH_MODE: accounts
+      INSURECLEAR_AUTH_DB: /app/data/auth.sqlite3
       INSURECLEAR_JOB_DB: /app/data/jobs.sqlite3
+      # Exact browser Origin. HTTPS deployments must explicitly configure theirs.
+      INSURECLEAR_CORS_ORIGINS: ${INSURECLEAR_CORS_ORIGINS:-http://localhost:8080}
+      # Safe default: HTTPS-only cookies. For HTTP-only LOCAL testing, explicitly
+      # set INSURECLEAR_AUTH_COOKIE_SECURE=false in your untracked .env.
+      INSURECLEAR_AUTH_COOKIE_SECURE: ${INSURECLEAR_AUTH_COOKIE_SECURE:-true}
+    # Browser requests use the frontend's /api proxy. Bind direct access locally.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - insureclear-data:/app/data
+      - insureclear-sessions:/app/sessions
 
   frontend:
     build:
       context: ./web/frontend
-      args:
-        VITE_API_BASE_URL: http://localhost:8000
-        VITE_API_KEY: ${INSURECLEAR_API_KEY:-}
     depends_on:
       - api
     ports:
-      - "8080:80"
+      - "127.0.0.1:8080:80"
 
 volumes:
+  # Jobs, account/session DB and reviews are private persistent data. Operators
+  # must establish restricted volume permissions, encryption and backup policy.
+  # No default accounts are created; provision invited users with the account CLI.
   insureclear-data:
+  insureclear-sessions:
