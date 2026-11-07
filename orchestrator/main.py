@@ -92,6 +92,7 @@ def run_pipeline(
 
     @contextmanager
     def stage_timer(label):
+        check_control()
         timer = _timed(label)
         try:
             with timer:

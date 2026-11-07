@@ -82,3 +82,12 @@ def test_original_validation_failure_requires_explicit_human_revision(access):
     store.update(job_id, result=report)
     response = clients["reviewer"].post(f"/api/jobs/{job_id}/review/decision", json={"expected_version": 1, "decision": "approved", "checks": CHECKS})
     assert response.status_code == 422
+
+
+def test_identical_text_edit_cannot_bypass_original_invalid_guard(access):
+    store, clients, job_id = completed(access)
+    report = store.get(job_id)["result"]; report["evidence_validation"] = {"valid": False, "errors": [{"category": "historic_failure"}]}
+    store.update(job_id, result=report)
+    assert clients["alice"].put(f"/api/jobs/{job_id}/review", json={"expected_version": 1, "letter": report["appeal_letter"]}).status_code == 200
+    response = clients["reviewer"].post(f"/api/jobs/{job_id}/review/decision", json={"expected_version": 2, "decision": "approved", "checks": CHECKS})
+    assert response.status_code == 422

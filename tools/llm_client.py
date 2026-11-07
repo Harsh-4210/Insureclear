@@ -27,6 +27,7 @@ _client_initialised = False
 _total_calls = 0
 _total_time = 0.0
 _total_tokens = 0
+_unreported_usage_calls = 0
 _total_retries = 0
 _total_429s = 0
 _groq_rate_lock = threading.Lock()
@@ -82,12 +83,26 @@ def get_stats() -> dict:
         "model": MODEL_NAME,
         "total_calls": _total_calls,
         "total_tokens": _total_tokens,
+        "unreported_usage_calls": _unreported_usage_calls,
         "total_retries": _total_retries,
         "total_429s": _total_429s,
         "groq_configured_key_count": len(_groq_api_keys()) if PROVIDER == "groq" else 0,
         "total_time_seconds": round(_total_time, 2),
         "avg_time_per_call": round(_total_time / max(_total_calls, 1), 2),
     }
+
+
+def _record_tokens(total):
+    global _total_tokens, _unreported_usage_calls
+    if type(total) is int and total > 0:
+        _total_tokens += total
+    else:
+        _unreported_usage_calls += 1
+
+
+def _record_gemini_usage(response):
+    usage = getattr(response, "usage_metadata", None)
+    _record_tokens(usage.get("total_token_count") if isinstance(usage, dict) else getattr(usage, "total_token_count", None))
 
 
 def _groq_api_keys() -> list[str]:
@@ -219,7 +234,7 @@ def _call_groq(
         data = response.json()
         _total_calls += 1
         _total_time += time.time() - start
-        _total_tokens += data.get("usage", {}).get("total_tokens", 0)
+        _record_tokens(data.get("usage", {}).get("total_tokens"))
         return (data["choices"][0]["message"].get("content") or "").strip()
 
     raise RuntimeError("Groq call exhausted all retries.")
@@ -308,6 +323,7 @@ def call_llm(
             elapsed = time.time() - start
             _total_calls += 1
             _total_time += elapsed
+            _record_gemini_usage(response)
             return response.text.strip()
         except Exception as e:
             _total_retries += 1
@@ -405,6 +421,7 @@ def _call_native_json(
             elapsed = time.time() - start
             _total_calls += 1
             _total_time += elapsed
+            _record_gemini_usage(response)
             return json.loads(response.text.strip())
         except json.JSONDecodeError:
             raw = response.text.strip()

@@ -73,3 +73,14 @@ def test_cleanup_rejects_a_symlink_before_deleting_any_target(tmp_path):
     except OSError: pytest.skip("Windows account cannot create a symlink")
     with pytest.raises(ValueError, match="path"): confined_path(root, link / "private")
     assert outside.exists()
+
+
+def test_worker_stop_cannot_overwrite_deletion_fence(tmp_path):
+    store, _, _ = make_job(tmp_path, "running")
+    store.cancel("job1")
+    assert store.complete("job1", {"appeal_letter": "Late result"}) is False
+    store.begin_delete("job1")
+    assert store.stop("job1", "cancelled", "Cancelled", "PipelineCancelled") is False
+    assert store.get("job1")["status"] == "deleting"
+    store.finish_delete("job1")
+    assert store.get("job1") is None

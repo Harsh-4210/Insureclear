@@ -170,6 +170,18 @@ class JobStore:
         with self._lock, self._connect() as connection:
             connection.execute(f"UPDATE jobs SET {', '.join(assignments)} WHERE id = ?", values)
 
+    def stop(self, job_id: str, status: str, message: str, error_type: str) -> bool:
+        if status not in {"failed", "cancelled", "timed_out"}:
+            raise ValueError("Unknown terminal stop status")
+        with self._lock, self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if not row or row[0] not in {"running", "cancellation_requested"}:
+                return False
+            status = "cancelled" if row[0] == "cancellation_requested" else status
+            db.execute("UPDATE jobs SET status=?,stage=?,message=?,error=?,traceback=NULL,updated_at=? WHERE id=?", (status, status, message, error_type, self._now(), job_id))
+            return True
+
     def complete(self, job_id: str, result: dict) -> bool:
         """Completion and cancellation contend for the same durable write lock."""
         with self._lock, self._connect() as db:

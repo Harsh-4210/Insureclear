@@ -243,19 +243,14 @@ def _run_job(job_id: str, payload: dict[str, Any]) -> None:
         if not job_store.complete(job_id, run_result):
             raise PipelineCancelled("Completion was superseded by cancellation")
     except Exception as exc:
-        snapshot = _job_snapshot(job_id) or {}
-        _update_job(
-            job_id,
-            status="cancelled" if isinstance(exc, PipelineCancelled) else "timed_out" if isinstance(exc, PipelineTimedOut) else "failed",
-            progress=snapshot.get("progress", 0),
-            stage="cancelled" if isinstance(exc, PipelineCancelled) else "failed",
-            message="Pipeline stopped" if isinstance(exc, (PipelineCancelled, PipelineTimedOut)) else "Pipeline failed",
-            error=type(exc).__name__,
-            traceback=None,
-        )
+        job_store.stop(job_id, "cancelled" if isinstance(exc, PipelineCancelled) else "timed_out" if isinstance(exc, PipelineTimedOut) else "failed", "Pipeline stopped" if isinstance(exc, (PipelineCancelled, PipelineTimedOut)) else "Pipeline failed", type(exc).__name__)
     finally:
         if input_dir:
-            shutil.rmtree(input_dir, ignore_errors=True)
+            safe_input = confined_path(JOB_INPUTS_DIR, input_dir)
+            if safe_input.name != job_id:
+                raise ValueError("Unsafe worker cleanup path")
+            if safe_input.exists():
+                shutil.rmtree(safe_input)
 
 
 def _worker_loop() -> None:

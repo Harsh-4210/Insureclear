@@ -84,7 +84,7 @@ def decide_review(job_id: str, body: Decision, request: Request, identity: dict 
         raise HTTPException(409, "Review version changed; refresh before deciding")
     original_report = _api().get_authorized_job(job_id, identity)["result"]
     originally_invalid = original_report.get("evidence_validation", {}).get("valid") is False
-    if body.decision == "approved" and originally_invalid and not any(event["action"] == "edited" for event in current["history"]):
+    if body.decision == "approved" and originally_invalid and (not any(event["action"] == "edited" for event in current["history"]) or " ".join(current["letter"].split()) == " ".join(current["history"][0]["letter"].split())):
         raise HTTPException(422, "Original validation failure requires an explicit corrected human revision")
     validation = validate_appeal_letter(current["letter"], sources)
     if body.decision == "approved" and not validation.valid:
