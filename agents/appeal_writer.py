@@ -8,6 +8,7 @@ Supports revision based on Judge feedback.
 
 import hashlib
 import json
+import re
 from tools.document_context import ensure_prompt_budget, retrieval_fingerprint
 from tools.llm_client import call_llm, dispatch_padding
 from tools.io_utils import save_checkpoint, load_checkpoint
@@ -25,7 +26,15 @@ Your letters are:
 Never invent a numeric response/escalation deadline, including a requested 15-day
 period. Only include a timing promise when its exact source evidence is supplied.
 You write for Indian insurers, citing IRDAI rules, not US/UK law.
+Internal policy-offset markers locate evidence for review; never copy them into a letter.
 """
+
+
+def _strip_known_policy_markers(letter: str, context: str) -> str:
+    """Remove code-owned evidence labels, never ignore unknown source references."""
+    for marker in set(re.findall(r"\[policy:\d+:\d+\]", context)):
+        letter = letter.replace(marker, "")
+    return letter
 
 
 def _valid_denial_posture(policy_analyst_output: dict) -> str:
@@ -139,6 +148,7 @@ Write [POLICYHOLDER NAME], [DATE], [INSURER ADDRESS] as placeholders where infor
     if cached and cached.get("input_context_sha256") == context_hash:
         return cached.get("letter", "")
     letter = call_llm(prompt, system_prompt=SYSTEM_PROMPT, temperature=0.3, max_output_tokens=1200)
+    letter = _strip_known_policy_markers(letter, policy_analyst_output.get("verified_policy_context") or irdai_output.get("verified_policy_context", ""))
     letter = _enforce_valid_denial_posture(letter, policy_analyst_output, irdai_output)
     save_checkpoint(case_id, "appeal_writer", {"letter": letter, "input_context_sha256": context_hash})
     print("[Appeal Writer] ✓ Done")
@@ -212,6 +222,7 @@ turn regulatory leads into accusations.
 
     ensure_prompt_budget(prompt, SYSTEM_PROMPT, 1200 + dispatch_padding())
     revised_letter = call_llm(prompt, system_prompt=SYSTEM_PROMPT, temperature=0.3, max_output_tokens=1200)
+    revised_letter = _strip_known_policy_markers(revised_letter, irdai_output.get("verified_policy_context", ""))
     revised_letter = _enforce_valid_denial_posture(
         revised_letter,
         {"rejection_appears_valid": irdai_output.get("conflict_metadata", {}).get(

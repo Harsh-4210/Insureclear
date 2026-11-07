@@ -134,7 +134,7 @@ def run_pipeline(
     _validate_text(denial_text, "denial letter")
     _validate_text(policy_text, "policy document")
     registry = load_registry()
-    prepare_session(case_id, denial_text, policy_text, regulatory_text, retrieval_fingerprint() + registry.fingerprint + ":policy-evidence-1:quality-2")
+    prepare_session(case_id, denial_text, policy_text, regulatory_text, retrieval_fingerprint() + registry.fingerprint + ":policy-evidence-1:quality-2:letter-markers-1")
 
     # ── Agent 1: Auditor ──────────────────────────────────────────
     print("\n[Step 1/5] Auditor — Parsing documents...")

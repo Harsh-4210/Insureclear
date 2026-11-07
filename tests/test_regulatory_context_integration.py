@@ -108,3 +108,20 @@ def test_writer_judge_and_revision_share_verified_policy_wording(monkeypatch, tm
     judge.run("Final letter", {}, evidence, "policy_judge")
     assert len(prompts) == 3 and all(quote in prompt for prompt in prompts)
     assert all("already supplied" in prompt for prompt in prompts)
+
+
+import pytest
+
+@pytest.mark.parametrize("revision", [False, True])
+def test_writer_removes_only_known_internal_policy_markers(monkeypatch, tmp_path, revision):
+    monkeypatch.setattr(io_utils, "SESSIONS_DIR", tmp_path / "sessions")
+    context = "[policy:12:72]\nSection 1.2 covers day-care treatment without a 24-hour stay."
+    regulatory = evidence_result(); regulatory["verified_policy_context"] = context
+    monkeypatch.setattr(appeal_writer, "call_llm", lambda *args, **kwargs: "Section 1.2 covers treatment. [policy:12:72] Unknown [policy:99:100].")
+    if revision:
+        letter = appeal_writer.revise("Initial letter", {}, {}, regulatory, "strip_revision")
+    else:
+        letter = appeal_writer.run({}, {"verified_policy_context": context}, regulatory, "strip_initial")
+    assert "[policy:12:72]" not in letter
+    assert "[policy:99:100]" in letter
+    assert "Section 1.2" in letter
