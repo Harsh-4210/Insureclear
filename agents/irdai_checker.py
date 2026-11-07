@@ -181,7 +181,8 @@ Return a JSON object:
 """
 
     context_hash = hashlib.sha256(json.dumps(
-        [auditor_output, policy_analyst_output, registry.fingerprint, evidence.as_dict(), context_config()],
+        [SYSTEM_PROMPT, prompt, auditor_output, policy_analyst_output,
+         registry.fingerprint, evidence.as_dict(), context_config()],
         sort_keys=True, ensure_ascii=False,
     ).encode()).hexdigest()
     ensure_prompt_budget(prompt, SYSTEM_PROMPT, 1536 + dispatch_padding(True))

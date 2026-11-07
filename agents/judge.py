@@ -97,7 +97,7 @@ Score honestly. An overall score above 0.75 = APPROVE. Below 0.75 = REVISE.
 """
 
     ensure_prompt_budget(prompt, SYSTEM_PROMPT, 2048 + dispatch_padding(True))
-    reviewed_hash = hashlib.sha256((appeal_letter + prompt).encode()).hexdigest()
+    reviewed_hash = hashlib.sha256((SYSTEM_PROMPT + "\n" + prompt).encode()).hexdigest()
     cached = load_checkpoint(case_id, "judge")
     if cached and cached.get("reviewed_context_sha256") == reviewed_hash:
         return cached

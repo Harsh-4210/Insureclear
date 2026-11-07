@@ -3,7 +3,7 @@
 ## Local Docker deployment
 
 1. Copy `.env.example` to `.env`.
-2. Set `GEMINI_API_KEY`.
+2. Set `LLM_PROVIDER=groq` and your authorized `GROQ_API_KEY` for the fictional demo.
 3. Set `INSURECLEAR_AUTH_MODE=accounts`, a persistent private auth DB and exact
    `INSURECLEAR_CORS_ORIGINS`. Provision invite-only accounts with the CLI in
    [PILOT_OPERATIONS.md](PILOT_OPERATIONS.md). There is no default account.

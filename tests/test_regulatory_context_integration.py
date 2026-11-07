@@ -125,3 +125,24 @@ def test_writer_removes_only_known_internal_policy_markers(monkeypatch, tmp_path
     assert "[policy:12:72]" not in letter
     assert "[policy:99:100]" in letter
     assert "Section 1.2" in letter
+
+@pytest.mark.parametrize("stage", ["judge", "irdai_checker"])
+def test_cached_review_requires_current_system_instructions(monkeypatch, tmp_path, stage):
+    monkeypatch.setattr(io_utils, "SESSIONS_DIR", tmp_path / "sessions")
+    module = judge if stage == "judge" else irdai_checker
+    calls = []
+
+    def generate(_prompt, **kwargs):
+        calls.append(kwargs["system_prompt"])
+        if stage == "judge":
+            return {"overall_score": .9, "recommendation": "APPROVE"}
+        return {"appeal_pathway": {"reasoning": "Synthetic result"}}
+
+    monkeypatch.setattr(module, "call_llm_json", generate)
+    args = ("Review the supplied evidence.", {}, {}, "review_cache") if stage == "judge" else ({}, {}, "review_cache")
+    module.run(*args)
+    module.run(*args)
+    assert len(calls) == 1
+    monkeypatch.setattr(module, "SYSTEM_PROMPT", module.SYSTEM_PROMPT + "\nUpdated review instruction.")
+    module.run(*args)
+    assert len(calls) == 2
