@@ -137,3 +137,16 @@ test('timed-out jobs terminate polling without scheduling another request', asyn
   stop()
   assert.deepEqual(delays, [])
 })
+
+test('concurrent anonymous session probes both report sign-in required without an expiry event', async () => {
+  let expired = 0
+  const client = m.createClient({
+    onExpired: () => expired++,
+    fetchImpl: async () => json({ detail: 'Authentication required' }, 401),
+  })
+  const probes = await Promise.allSettled([client.session(), client.session()])
+  assert.deepEqual(probes.map(probe => [probe.status, probe.reason?.status]), [
+    ['rejected', 401], ['rejected', 401],
+  ])
+  assert.equal(expired, 0)
+})
