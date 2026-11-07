@@ -95,7 +95,8 @@ class DocumentContext:
         return self.coverage
 
 
-def select_context(sources: dict[str, str], query: str, budget_units: int) -> DocumentContext:
+def select_context(sources: dict[str, str], query: str, budget_units: int,
+                   priority_source: str | None = None) -> DocumentContext:
     if budget_units <= 0:
         raise ValueError("Document context budget must be positive")
     config = context_config()
@@ -124,11 +125,19 @@ def select_context(sources: dict[str, str], query: str, budget_units: int) -> Do
                     score += 30
                 ranked.append((-score, source_order, index, chunk))
         used = 0
+        secondary_used = 0
         for _, _, _, chunk in sorted(ranked, key=lambda item: item[:3]):
             cost = estimate_tokens(chunk.render()) + 2
+            secondary = priority_source is not None and chunk.source_id != priority_source
+            if secondary and secondary_used + cost > budget_units // 3:
+                continue
             if used + cost <= budget_units:
                 included.setdefault(chunk.source_id, []).append(chunk)
                 used += cost
+                if secondary:
+                    secondary_used += cost
+        if priority_source and chunks_by_source.get(priority_source) and not included.get(priority_source):
+            raise ValueError("Document context budget cannot hold the priority source")
         if not any(included.values()):
             raise ValueError("Document context budget cannot hold a source chunk")
         rendered = {name: "\n\n".join(c.render() for c in sorted(included.get(name, []), key=lambda c: c.start)) for name in sources}
@@ -153,7 +162,8 @@ def select_context(sources: dict[str, str], query: str, budget_units: int) -> Do
     return DocumentContext(rendered, coverage)
 
 
-def fit_document_prompt(prompt: str, system_prompt: str, sources: dict[str, str], query: str, max_output_tokens: int, transport_reserve: int = 0) -> tuple[str, dict]:
+def fit_document_prompt(prompt: str, system_prompt: str, sources: dict[str, str], query: str, max_output_tokens: int, transport_reserve: int = 0,
+                        priority_source: str | None = None) -> tuple[str, dict]:
     config = context_config()
     base = prompt
     for name in sources:
@@ -165,9 +175,11 @@ def fit_document_prompt(prompt: str, system_prompt: str, sources: dict[str, str]
     available = config["prompt_budget"] - reserved
     if available <= 0:
         raise ValueError("Prompt scaffolding and output reserve exceed document budget")
-    context = select_context(sources, query, available)
-    for name, content in context.source_texts.items():
-        prompt = prompt.replace(source_marker(name), content)
+    context = select_context(sources, query, available, priority_source=priority_source)
+    slots = {source_marker(name): content for name, content in context.source_texts.items()}
+    if slots:
+        pattern = "|".join(map(re.escape, slots))
+        prompt = re.sub(pattern, lambda match: slots[match.group()], prompt)
     actual = estimate_tokens(prompt) + estimate_tokens(system_prompt) + max_output_tokens + transport_reserve + PROMPT_OVERHEAD_UNITS
     if actual > config["prompt_budget"]:
         raise ValueError("Assembled prompt exceeds document context budget")

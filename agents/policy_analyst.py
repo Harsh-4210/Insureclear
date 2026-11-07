@@ -18,11 +18,15 @@ You specialise in finding clauses that insurers use to reduce or reject claims,
 and identifying when those clauses have been wrongly applied.
 Analyze the contract only. Regulatory obligations are handled separately from pinned sources.
 Preserve every exception and negation: a waiting period except for accidents does
-not mean it applies only to accidents. Do not invent a legal obligation.
+not mean it applies only to accidents. Apply an exception only to the clause
+that states it or explicitly cross-references it. Distinguish documented facts
+from hypothetical grounds for a challenge. Prefer original source wording over
+summaries, including any receipt acknowledgment that contradicts a stated denial.
+Do not invent a legal obligation.
 """ + "\n" + EVIDENCE_BOUNDARY
 
 
-def run(policy_text: str, auditor_output: dict, case_id: str) -> dict:
+def run(policy_text: str, auditor_output: dict, case_id: str, denial_text: str = "") -> dict:
     """
     Analyse the policy document in the context of the specific denial.
     Returns findings about whether the rejection was legitimate.
@@ -33,6 +37,12 @@ def run(policy_text: str, auditor_output: dict, case_id: str) -> dict:
         f"- {k}: {v['description']}" for k, v in POLICY_RED_FLAGS.items()
     ])
 
+    sources = {"policy": policy_text}
+    denial_section = ""
+    if denial_text:
+        sources["denial"] = denial_text
+        denial_section = f'\n=== ORIGINAL DENIAL LETTER ===\n{source_marker("denial")}\n'
+
     prompt = f"""
 A claim has been denied with the following details:
 - Treatment: {auditor_output.get('treatment_or_procedure')}
@@ -40,7 +50,9 @@ A claim has been denied with the following details:
 - Denial category: {auditor_output.get('denial_reason_category')}
 - Clause cited: {auditor_output.get('policy_clause_cited')}
 - Policy start date: {auditor_output.get('policy_start_date')}
+- Denial date: {auditor_output.get('denial_date')}
 - Sum insured: {auditor_output.get('sum_insured')}
+{denial_section}
 
 === POLICY DOCUMENT ===
 {source_marker("policy")}
@@ -81,7 +93,8 @@ Return a JSON object:
 """
 
     prompt, coverage = fit_document_prompt(
-        prompt, SYSTEM_PROMPT, {"policy": policy_text}, str(auditor_output), 1536, transport_reserve=dispatch_padding(True)
+        prompt, SYSTEM_PROMPT, sources, str(auditor_output), 1536,
+        transport_reserve=dispatch_padding(True), priority_source="policy",
     )
     context_hash = hashlib.sha256((SYSTEM_PROMPT + prompt + retrieval_fingerprint()).encode()).hexdigest()
     cached = load_checkpoint(case_id, "policy_analyst")

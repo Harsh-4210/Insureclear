@@ -27,7 +27,7 @@ def configure_fake_agents(monkeypatch, judge_results):
     monkeypatch.setattr(
         policy_analyst,
         "run",
-        lambda policy, audit, case_id: {
+        lambda policy, audit, case_id, denial: {
             "rejection_appears_valid": False,
             "rejection_validity_explanation": "The clause requires review.",
             "strongest_counter_arguments": ["The exclusion is unclear."],

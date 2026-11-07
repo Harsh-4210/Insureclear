@@ -149,7 +149,7 @@ def run_pipeline(
     print("\n[Step 2/5] Policy Analyst — Examining policy terms...")
     emit("policy_analyst", "Policy Analyst is checking clauses and exclusions", 30, "running")
     with stage_timer("Policy Analyst") as t2:
-        policy_result = policy_analyst.run(policy_text, auditor_result, case_id)
+        policy_result = policy_analyst.run(policy_text, auditor_result, case_id, denial_text)
         policy_result = validate_agent_output("Policy Analyst", policy_result)
         policy_result = annotate_policy_evidence(policy_result, policy_text)
 
