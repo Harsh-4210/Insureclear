@@ -104,3 +104,21 @@ Cancellation checks run between pages/attempts. These bounds do not make a PDF
 parser immune to malicious inputs; deployment isolation/resource limits and
 representative OCR quality checks remain acceptance work. Over-limit documents
 need a reviewed intake/splitting workflow; do not silently raise limits in production.
+
+
+## Reproducible dependencies and checks
+
+Use the universal hash-pinned requirements.lock for verified installations,
+Docker and CI: python -m pip install --require-hashes -r requirements.lock.
+requirements.txt expresses direct requirements and requirements-security.txt
+records advisory fix floors. After intentional dependency changes regenerate
+with uv pip compile requirements.txt --python-version 3.11 --universal
+--generate-hashes --output-file requirements.lock, then run pip check, the full
+suite, frontend checks and fresh advisory audits. A zero-advisory result is not
+proof of vulnerability absence. Container tags remain mutable upstream inputs;
+record built image IDs/digests with release evidence before deployment.
+
+Both Groq and Gemini usage metadata feed case counters. If a successful response
+omits usable usage metadata, the next stage fails closed rather than treating
+unknown usage as free tokens. Provider-reported totals may still exclude failed
+requests; local limits are not a provider billing cap.

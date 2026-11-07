@@ -268,7 +268,7 @@ python -m venv venv
 venv\Scripts\activate        # Windows
 # source venv/bin/activate   # macOS/Linux
 
-pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.lock
 ```
 
 Create `.env` from the template:

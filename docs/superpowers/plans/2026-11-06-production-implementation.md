@@ -143,9 +143,9 @@ Serve private-pilot claimant users and trained reviewers. A completed model job 
 ### T07: Account/case/review UI (frontend agent after API contract stabilizes)
 **Files:** existing App/CSS, focused components/client tests, frontend Dockerfile, Compose/nginx integration (coordinate ownership with controller).
 **Interfaces:** same-origin `/api` default; credentialed fetch, CSRF in memory. Flow: login -> authorized case list -> case result -> review editor -> reviewer confirmations/decision -> approved export. Logout clears private state/polling. New edit removes approved download. Show expired session, stale revision, validation and polling errors visibly.
-- [ ] Add meaningful client credential/CSRF and version-aware action tests. Browser-check failed login, claimant isolation and stale editor when available.
-- [ ] Remove VITE_API_KEY from browser/build/Compose; same-origin nginx API proxy, configured development base URL. Preserve app style; labels/keyboard focus/busy states and clear draft/approved status required. Never expose shared secrets as browser configuration.
-- [ ] Frontend tests/build and backend integration GREEN; actual browser flow recorded, not inferred. Commit `feat: add account and reviewer workflows to the app`.
+- [x] Add meaningful client credential/CSRF and version-aware action tests. Browser-check failed login, claimant isolation and stale editor when available.
+- [x] Remove VITE_API_KEY from browser/build/Compose; same-origin nginx API proxy, configured development base URL. Preserve app style; labels/keyboard focus/busy states and clear draft/approved status required. Never expose shared secrets as browser configuration.
+- [x] Frontend tests/build and backend integration GREEN; actual browser flow recorded, not inferred. Commit `feat: add account and reviewer workflows to the app`.
 
 ## Phase 4 — Privacy, resilience and observable operation
 
@@ -170,10 +170,11 @@ Serve private-pilot claimant users and trained reviewers. A completed model job 
 ### T10: CI and honest evaluation (controller)
 **Files:** `.github/workflows/ci.yml`, eval harness/tests, readiness docs, new `docs/PILOT_ACCEPTANCE.md`.
 **Interfaces:** offline Linux CI Python tests + npm ci/test/build without provider secrets. Separate manual synthetic live gate. Each report binds input/answer/prompt/source/model hashes and per-case usage; resume refuses changed inputs/answers/sources. Summary states reused/new reports, runtime/errors and current-invocation usage.
-- [ ] RED resume refusal on changed fixture/answer/source, long late-clause inputs, Unicode deadline and malformed-response regression tests.
-- [ ] Implement manifests/CI, offline suite/frontend build GREEN; commit `ci: verify pilot security and evidence regressions`.
+- [x] RED resume refusal on changed fixture/answer/source, long late-clause inputs, Unicode deadline and malformed-response regression tests.
+- [x] Implement manifests/CI, offline suite/frontend build GREEN; commit `ci: verify pilot security and evidence regressions`.
 - [ ] Run completely fresh synthetic strict evaluation on candidate code without copied reports; preserve failures. Repeat for equivalent conclusions/evidence, not raw text identity. Record expert semantic rubric separately from keywords.
 - [ ] Validate representative consented/redacted long/scanned/multilingual cases and burst/crash recovery before release. No real inputs sent externally without appropriate authorization.
+
 
 ## Phase 6 — Local release candidate and performance
 
@@ -210,15 +211,15 @@ Serve private-pilot claimant users and trained reviewers. A completed model job 
 |---|---|---|
 | T00 | complete | 120 tests; baseline caed8d4; builder findings resolved; plan commit in Git history |
 | T01–T02 | complete locally | 129 pipeline/evidence tests passed; semantic/live acceptance remains T10 |
-| T03 | complete module | 27 identity tests; API integration T04 pending |
+| T03 | complete locally | 27 identity tests; T04 integration complete |
 | T04 | complete locally | case reads/downloads scoped by owner/org; full integrated suite recorded in ledger |
 | T05 | complete module | 30 review transaction tests |
 | T06 | complete locally | version/source-bound API; approval race regression fixed |
-| T07 | in progress | frontend module agent |
+| T07 | complete locally | 15 client tests/build; browser synthetic flow, real HTTPS acceptance pending |
 | T08 | complete locally | 245 passed/1 Windows symlink skip; PDF bounds added; deployment checks remain open |
 | T09 | audit code complete | 28 focused tests; 3 pinned sources/9 excerpts; legal sign-off unchecked |
-| T10 | pending | offline CI; live/representative acceptance separate |
-| T11 | pending | independent review/build/performance |
+| T10 | offline code complete | manifest/CI tests green; two fresh live runs and representative expert review pending |
+| T11 | in progress | review findings fixed; Windows252 pass/1skip; audits0 known; Docker/live gates running |
 | T12 | external gate | operator/legal/environment decisions and deployment permission |
 | T13 | conditional | measured scale trigger and environment-specific design |
 

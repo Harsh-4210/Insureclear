@@ -17,3 +17,5 @@ eval/results
 web/frontend/node_modules
 web/frontend/dist
 docs/superpowers/research
+
+.superpowers
