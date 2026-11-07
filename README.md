@@ -73,21 +73,34 @@ data/output/<case_id>_<timestamp>/
 
 ### Browser experience
 
-```bash
-# Terminal 1: API
-uvicorn web.api:app --reload --port 8000
+Run these commands from the repository root. Create the first invite-only
+account once. The CLI prompts for a password without echoing it.
 
-# Terminal 2: React interface
+```powershell
+.\.venv\Scripts\python.exe -m tools.manage_users --db data/auth.sqlite3 create --username claimant --org-id local-pilot --role claimant
+```
+
+Start the API in one PowerShell terminal:
+
+```powershell
+$env:INSURECLEAR_AUTH_MODE = 'accounts'
+$env:INSURECLEAR_AUTH_DB = 'data/auth.sqlite3'
+$env:INSURECLEAR_CORS_ORIGINS = 'http://127.0.0.1:5173'
+$env:INSURECLEAR_AUTH_COOKIE_SECURE = 'false'
+.\.venv\Scripts\python.exe -m uvicorn web.api:app --host 127.0.0.1 --port 8000
+```
+
+Start the React interface in a second terminal:
+
+```powershell
 cd web/frontend
-npm install
+npm ci
 npm run dev
 ```
 
-Open `http://localhost:5173`. The browser uses named accounts, not a bundled API
-key. Follow [pilot operations](docs/PILOT_OPERATIONS.md) to provision an invite-only
-account and exact allowed Origin. For explicit localhost HTTP development set
-`INSURECLEAR_AUTH_COOKIE_SECURE=false`; keep Secure cookies for HTTPS deployment.
-Account mode must be enabled with a private auth DB; no default account exists.
+Open `http://127.0.0.1:5173`. Vite proxies the browser's same-origin `/api`
+requests to FastAPI. For deployed environments, use the HTTPS setup in
+[pilot operations](docs/PILOT_OPERATIONS.md).
 
 The interface provides:
 
@@ -321,7 +334,7 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and
 
 The pilot uses named-account cookies, exact Origin/CSRF checks for mutations, and
 owner/organization authorization on every case route. `X-API-Key` is accepted only
-in explicitly configured trusted-local legacy mode; it cannot bypass account mode.
+in explicitly configured trusted-local legacy mode. Legacy requests can access only unowned legacy cases outside the reserved account checkpoint namespace.
 See [operator setup](docs/PILOT_OPERATIONS.md) and the
 [phased implementation plan](docs/superpowers/plans/2026-11-06-production-implementation.md).
 
@@ -350,12 +363,12 @@ See [operator setup](docs/PILOT_OPERATIONS.md) and the
 <br />
 
 ```bash
-curl -X POST http://localhost:8000/api/analyze \
+curl -H "X-API-Key: $INSURECLEAR_API_KEY" -X POST http://localhost:8000/api/analyze \
   -F "mode=demo" \
   -F "case_id=demo_case"
 ```
 
-With legacy shared-key authentication (not browser account mode):
+Poll the queued case with the same operator key:
 
 ```bash
 curl -H "X-API-Key: $INSURECLEAR_API_KEY" \

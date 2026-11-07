@@ -25,9 +25,8 @@ html:has(.entry) { scroll-padding-top: 4.1rem; }
   align-items: center;
   gap: 1rem;
   padding: .8rem var(--gutter);
-  background: rgb(236 232 223 / .94);
+  background: #ece8df;
   border-bottom: 1px solid rgb(32 31 28 / .12);
-  backdrop-filter: blur(12px);
   font-size: .875rem;
 }
 
@@ -79,7 +78,7 @@ html:has(.entry) { scroll-padding-top: 4.1rem; }
   font-size: clamp(1.15rem, 1.65vw, 1.5rem);
   letter-spacing: -.04em;
   line-height: 1.24;
-  animation: entry-rise .8s var(--out) both;
+  animation: entry-rise .36s var(--out) both;
 }
 .entry-intro h1 { font: inherit; font-weight: 750; margin: 0 0 .9em; }
 .entry-intro p { font-weight: 550; margin: 0; text-wrap: pretty; }
@@ -93,6 +92,7 @@ html:has(.entry) { scroll-padding-top: 4.1rem; }
   text-transform: uppercase;
 }
 .entry-meta { padding-bottom: .75rem; border-bottom: 1px solid rgb(32 31 28 / .27); }
+.entry-wordmark-mask { overflow: clip; }
 .entry-wordmark {
   display: block;
   width: 100%;
@@ -100,10 +100,10 @@ html:has(.entry) { scroll-padding-top: 4.1rem; }
   margin: .25rem 0 0;
   fill: currentColor;
   font: 780 172px Arial, sans-serif;
-  animation: entry-type .92s var(--out) both;
+  animation: entry-type .48s var(--out) both;
 }
-@keyframes entry-rise { from { opacity: 0; transform: translateY(1.5rem); } }
-@keyframes entry-type { from { clip-path: inset(100% 0 0); transform: translateY(10%); } to { clip-path: inset(0); } }
+@keyframes entry-rise { from { opacity: 0; transform: translateY(.8rem); } }
+@keyframes entry-type { from { opacity: 0; transform: translateY(46%); } }
 
 .entry-story { position: relative; background: var(--ink); color: var(--paper); }
 .entry-shutter {
@@ -184,21 +184,26 @@ html:has(.entry) { scroll-padding-top: 4.1rem; }
   background: var(--ink);
   color: var(--paper);
 }
-.entry-orbit svg { position: absolute; width: max(100%, 30rem); height: 100%; }
+.orbit-layer, .orbit-grid {
+  position: absolute;
+  width: max(142%, 34rem);
+  aspect-ratio: 1;
+  pointer-events: none;
+}
 .orbit-grid { stroke: currentColor; stroke-width: .65; stroke-dasharray: 1 5; opacity: .37; fill: none; }
-.orbit-track {
+.orbit-layer {
+  contain: paint;
   font: 12px var(--mono);
   letter-spacing: .65px;
   fill: currentColor;
-  transform-origin: 0 0;
-  animation: orbit-turn 50s linear infinite;
+  animation: orbit-turn 28s linear infinite paused;
 }
-.orbit-track-1 { animation-duration: 64s; animation-direction: reverse; opacity: .8; }
-.orbit-track-2 { animation-duration: 72s; opacity: .62; }
-.is-paused .orbit-track { animation-play-state: paused; }
+.orbit-layer svg { display: block; width: 100%; height: 100%; }
+.orbit-layer-1 { animation-duration: 36s; animation-direction: reverse; opacity: .72; }
+.is-running .orbit-layer { animation-play-state: running; will-change: transform; }
 @keyframes orbit-turn { to { transform: rotate(1turn); } }
 
-.orbit-caption, .orbit-toggle, .orbit-hold {
+.orbit-caption, .orbit-toggle, .orbit-boost {
   position: absolute;
   bottom: 1rem;
   padding: .45rem .55rem;
@@ -210,8 +215,8 @@ html:has(.entry) { scroll-padding-top: 4.1rem; }
 }
 .orbit-caption { left: 1rem; }
 .orbit-toggle { top: 1rem; right: 1rem; bottom: auto; }
-.orbit-hold { right: 1rem; touch-action: manipulation; }
-.orbit-toggle:hover, .orbit-hold:hover { background: #454039; }
+.orbit-boost { right: 1rem; touch-action: manipulation; }
+.orbit-toggle:hover, .orbit-boost:hover, .orbit-boost[aria-pressed="true"] { background: #454039; }
 .entry-footer { padding: 1.2rem var(--gutter); border-top: 1px solid rgb(32 31 28 / .27); }
 
 @supports (animation-timeline: view()) {
@@ -225,12 +230,12 @@ html:has(.entry) { scroll-padding-top: 4.1rem; }
   .entry-story-lead h2 {
     animation: story-scan linear both;
     animation-timeline: view();
-    animation-range: entry 15% cover 41%;
+    animation-range: entry 0% cover 28%;
   }
   @keyframes shutter-pass { from { opacity: 0; transform: translateY(30%); } to { opacity: 1; } }
   @keyframes story-scan {
-    from { clip-path: inset(0 100% 0 0); opacity: .25; }
-    to { clip-path: inset(0); opacity: 1; }
+    from { transform: translateY(1.1rem); opacity: .2; }
+    to { transform: translateY(0); opacity: 1; }
   }
 }
 
@@ -253,5 +258,5 @@ html:has(.entry) { scroll-padding-top: 4.1rem; }
 
 @media (prefers-reduced-motion: reduce) {
   .entry *, .entry *::before { animation: none !important; transition: none !important; }
-  .entry-shutter, .orbit-toggle, .orbit-hold { display: none; }
+  .entry-shutter, .orbit-toggle, .orbit-boost { display: none; }
 }

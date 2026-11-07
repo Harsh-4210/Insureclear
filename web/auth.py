@@ -12,6 +12,7 @@ import json
 import os
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -37,18 +38,32 @@ def get_store():
     return _store_for_path(str(Path(path).resolve()))
 
 
+def auth_mode():
+    return os.getenv('INSURECLEAR_AUTH_MODE', 'accounts').strip().lower()
+
+
 def _accounts_enabled():
-    if os.getenv('INSURECLEAR_AUTH_MODE', 'legacy').lower() != 'accounts':
+    if auth_mode() != 'accounts':
         raise HTTPException(503, 'Account authentication is not configured', headers=NO_STORE)
 
 
-def _secure_cookie():
-    return os.getenv('INSURECLEAR_AUTH_COOKIE_SECURE', 'true').lower() != 'false'
+def browser_origins():
+    return [value.strip() for value in os.getenv(
+        'INSURECLEAR_CORS_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173').split(',') if value.strip()]
+
+
+def secure_cookie():
+    if os.getenv('INSURECLEAR_AUTH_COOKIE_SECURE', 'true').lower() != 'false':
+        return True
+    origins = [urlsplit(origin) for origin in browser_origins()]
+    if not origins or any(origin.scheme != 'http' or origin.hostname not in {'localhost', '127.0.0.1', '::1'}
+                          for origin in origins):
+        raise HTTPException(503, 'Insecure cookies are allowed only for local HTTP development', headers=NO_STORE)
+    return False
 
 
 def _require_origin(request):
-    allowed = {value.strip() for value in os.getenv(
-        'INSURECLEAR_CORS_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173').split(',') if value.strip()}
+    allowed = browser_origins()
     origin = request.headers.get('origin')
     if not origin or origin == 'null' or origin == '*' or origin not in allowed:
         raise HTTPException(403, 'Origin is not allowed', headers=NO_STORE)
@@ -73,6 +88,7 @@ def require_mutation(request: Request, principal: dict):
 async def login(request: Request):
     _accounts_enabled()
     _require_origin(request)
+    secure = secure_cookie()
     body = bytearray()
     async for chunk in request.stream():
         if len(body) + len(chunk) > 4096:
@@ -90,7 +106,7 @@ async def login(request: Request):
         raise HTTPException(401, INVALID_LOGIN, headers=NO_STORE) from None
     response = JSONResponse({'user': public, 'csrf_token': csrf}, headers=NO_STORE)
     response.set_cookie(COOKIE_NAME, token, max_age=SESSION_SECONDS, httponly=True,
-                        secure=_secure_cookie(), samesite='lax', path='/')
+                        secure=secure, samesite='lax', path='/')
     return response
 
 
@@ -103,7 +119,8 @@ def session(principal: dict = Depends(current_principal)):
 @router.post('/logout')
 def logout(request: Request, principal: dict = Depends(current_principal)):
     require_mutation(request, principal)
+    secure = secure_cookie()
     get_store().logout(request.cookies.get(COOKIE_NAME))
     response = JSONResponse({'ok': True}, headers=NO_STORE)
-    response.delete_cookie(COOKIE_NAME, path='/', httponly=True, secure=_secure_cookie(), samesite='lax')
+    response.delete_cookie(COOKIE_NAME, path='/', httponly=True, secure=secure, samesite='lax')
     return response

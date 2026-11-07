@@ -112,8 +112,11 @@ def test_bound_login_body_and_generic_errors(auth):
 
 def test_explicit_local_http_override(auth, monkeypatch):
     _, _, client = auth
+    local = 'http://127.0.0.1:5173'
+    monkeypatch.setenv('INSURECLEAR_CORS_ORIGINS', local)
     monkeypatch.setenv('INSURECLEAR_AUTH_COOKIE_SECURE', 'false')
-    response = login(client)
+    response = client.post('/api/auth/login', headers={'Origin': local},
+                           json={'username': 'alice', 'password': PASSWORD})
     assert response.status_code == 200
     assert 'Secure' not in response.headers['set-cookie']
     assert 'HttpOnly' in response.headers['set-cookie']
@@ -133,3 +136,14 @@ def test_decoder_recursion_is_a_generic_invalid_login(auth, monkeypatch):
     monkeypatch.setattr(module.json, "loads", too_deep)
     response = client.post('/api/auth/login', headers={'Origin': ORIGIN}, content=b'{}')
     assert response.status_code == 401
+
+
+def test_insecure_cookie_override_rejects_remote_http(auth, monkeypatch):
+    _, _, client = auth
+    remote = 'http://pilot.example.test'
+    monkeypatch.setenv('INSURECLEAR_CORS_ORIGINS', remote)
+    monkeypatch.setenv('INSURECLEAR_AUTH_COOKIE_SECURE', 'false')
+    response = client.post('/api/auth/login', headers={'Origin': remote},
+                           json={'username': 'alice', 'password': PASSWORD})
+    assert response.status_code == 503
+    assert 'set-cookie' not in response.headers

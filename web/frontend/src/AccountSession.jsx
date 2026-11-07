@@ -10,7 +10,7 @@ export default function AccountSession({ children }) {
   const [password, setPassword] = useState('')
   const [sessionAttempt, setSessionAttempt] = useState(0)
   const [returnToSignIn, setReturnToSignIn] = useState(false)
-  const [api] = useState(() => createClient({ base: import.meta.env.VITE_API_BASE_URL || '', onExpired: () => { setReturnToSignIn(true); setUser(null); setPassword(''); setNotice({ text: 'Your session expired. Sign in again to continue.', error: true }) } }))
+  const [api] = useState(() => createClient({ onExpired: () => { setReturnToSignIn(true); setUser(null); setPassword(''); setNotice({ text: 'Your session expired. Sign in again to continue.', error: true }) } }))
   useEffect(() => {
     let active = true
     setBusy(true)

@@ -32,7 +32,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from orchestrator.main import run_pipeline  # noqa: E402
 from tools.io_utils import clear_session  # noqa: E402
-from tools.job_store import JobStore, QueueFull  # noqa: E402
+from tools.job_store import ACCOUNT_CASE_PREFIX, JobStore, QueueFull  # noqa: E402
 from web import auth  # noqa: E402
 from tools import io_utils, llm_client
 from tools.regulatory_registry import load_registry
@@ -57,7 +57,7 @@ job_store = JobStore(os.getenv("INSURECLEAR_JOB_DB", str(PROJECT_ROOT / "data" /
 
 def validated_origins() -> list[str]:
     from urllib.parse import urlsplit
-    origins = [value.strip() for value in os.getenv("INSURECLEAR_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if value.strip()]
+    origins = auth.browser_origins()
     for origin in origins:
         parsed = urlsplit(origin)
         if "*" in origin or parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment:
@@ -86,6 +86,7 @@ async def private_response_headers(request: Request, call_next):
         print({"event": "request_failed", "request_id": request_id, "error_type": type(error).__name__})
         response = JSONResponse({"detail": "Request failed; contact the operator with the request ID", "request_id": request_id}, status_code=500)
     response.headers["X-Request-ID"] = request_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
         vary = {value.strip() for value in response.headers.get("Vary", "").split(",") if value.strip()}
@@ -120,18 +121,17 @@ def _load_sample_text(filename: str) -> str:
 
 
 def _authenticate(request: Request, x_api_key: str | None = Header(default=None)) -> dict:
-    mode = os.getenv("INSURECLEAR_AUTH_MODE", "legacy").lower()
+    mode = auth.auth_mode()
     if mode == "accounts":
         return auth.current_principal(request)
     if mode != "legacy":
         raise HTTPException(503, "Authentication mode is not configured")
     configured_key = os.getenv("INSURECLEAR_API_KEY")
-    auth_required = os.getenv("INSURECLEAR_REQUIRE_AUTH", "false").lower() == "true"
-    if auth_required and not configured_key:
+    if not configured_key or configured_key == "replace_me_with_a_long_random_value":
         raise HTTPException(503, "API authentication is not configured")
-    if configured_key and not x_api_key:
+    if not x_api_key:
         raise HTTPException(401, "X-API-Key header is required")
-    if configured_key and not hmac.compare_digest(x_api_key or "", configured_key):
+    if not hmac.compare_digest(x_api_key.encode(), configured_key.encode()):
         raise HTTPException(403, "Invalid API key")
     return {"user_id": "legacy", "org_id": "legacy", "role": "admin", "legacy": True}
 
@@ -158,7 +158,10 @@ def get_authorized_job(job_id: str, principal: dict) -> dict:
     job = _job_snapshot(job_id)
     if not job or job.get("status") == "deleting":
         raise HTTPException(404, "Job not found")
-    if not principal.get("legacy"):
+    if principal.get("legacy"):
+        if job.get("owner_id") is not None or job["case_id"].lower().startswith(ACCOUNT_CASE_PREFIX):
+            raise HTTPException(404, "Job not found")
+    else:
         same_org = job.get("org_id") == principal["org_id"] and job.get("owner_id") is not None
         allowed = same_org and (job.get("owner_id") == principal["user_id"] or principal["role"] in {"reviewer", "admin"})
         if not allowed:
@@ -226,6 +229,10 @@ def _run_job(job_id: str, payload: dict[str, Any]) -> None:
     input_dir = payload.get("input_dir")
     case_id = payload["case_id"]
     try:
+        if case_id.lower().startswith(ACCOUNT_CASE_PREFIX):
+            job = job_store.get(job_id)
+            if not job or job.get("owner_id") is None or case_id != ACCOUNT_CASE_PREFIX + job_id:
+                raise ValueError("Invalid account checkpoint namespace")
         runtime = RuntimeControl(cancelled=lambda: (job_store.get(job_id) or {}).get("status") in {"cancelled", "cancellation_requested", "deleting"}, stats=llm_client.get_stats)
         runtime.check()
         if payload.get("fresh_run"):
@@ -308,8 +315,11 @@ async def analyze(
 
     job_id = uuid.uuid4().hex
     case_label = resolved_case_id
-    if not principal.get("legacy"):
-        resolved_case_id = "job_" + job_id
+    if principal.get("legacy"):
+        if resolved_case_id.lower().startswith(ACCOUNT_CASE_PREFIX):
+            raise HTTPException(400, "case_id uses a reserved prefix")
+    else:
+        resolved_case_id = ACCOUNT_CASE_PREFIX + job_id
     payload: dict[str, Any] = {
         "case_id": resolved_case_id,
         "fresh_run": fresh_run,
@@ -452,8 +462,11 @@ def ready():
         RuntimeControl()
         if min(int(os.getenv("INSURECLEAR_MAX_PENDING_JOBS", "100")), int(os.getenv("INSURECLEAR_MAX_PENDING_PER_USER", "3"))) < 1:
             raise ValueError("Queue configuration invalid")
-        if os.getenv("INSURECLEAR_AUTH_MODE", "legacy") == "accounts":
+        if auth.auth_mode() == "accounts":
+            auth.secure_cookie()
             with auth.get_store()._connect() as db: db.execute("SELECT 1").fetchone()
+        elif auth.auth_mode() != "legacy" or os.getenv("INSURECLEAR_API_KEY") in (None, "", "replace_me_with_a_long_random_value"):
+            raise ValueError("Authentication configuration invalid")
         checks["auth_configuration"] = True
     except Exception: checks["auth_configuration"] = False
     checks["provider_configured"] = bool(_provider_configured())

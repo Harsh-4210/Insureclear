@@ -8,62 +8,67 @@ const WORKFLOW = [
 ]
 
 const RING_LABELS = ['CLAIM DENIAL', 'POLICY TEXT', 'CITED EVIDENCE', 'HUMAN REVIEW']
-const RINGS = Array.from({ length: 24 }, (_, index) => {
-  const radius = 23 + index * 18
+const RINGS = Array.from({ length: 18 }, (_, index) => {
+  const radius = 28 + index * 24
   const label = RING_LABELS[index % RING_LABELS.length]
   const text = (label + ' · ').repeat(Math.max(1, Math.floor(2 * Math.PI * radius / ((label.length + 3) * 8))))
-  return { radius, text, track: index % 3 }
+  return { radius, text, track: index % 2 }
 })
 
 function Orbit() {
   const id = useId()
   const [paused, setPaused] = useState(false)
-  const graphic = useRef(null)
+  const [boosted, setBoosted] = useState(false)
+  const [visible, setVisible] = useState(false)
+  const panel = useRef(null)
 
-  function setOrbitSpeed(rate) {
-    graphic.current?.getAnimations?.({ subtree: true }).forEach(animation => animation.updatePlaybackRate?.(rate))
-  }
+  useEffect(() => {
+    if (!window.IntersectionObserver) {
+      setVisible(true)
+      return
+    }
+    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting))
+    observer.observe(panel.current)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    for (const layer of panel.current.querySelectorAll('.orbit-layer')) {
+      for (const animation of layer.getAnimations?.() ?? []) {
+        animation.updatePlaybackRate?.(boosted ? 2.5 : 1)
+      }
+    }
+  }, [boosted, visible, paused])
 
   return (
-    <div className={`entry-orbit${paused ? ' is-paused' : ''}`}>
-      <svg ref={graphic} viewBox="-320 -320 640 640" aria-hidden="true" focusable="false">
-        <defs>
-          {RINGS.map(({ radius }) => (
-            <path key={radius} id={`${id}-${radius}`} d={`M ${-radius},0 a ${radius},${radius} 0 1,1 ${2 * radius},0 a ${radius},${radius} 0 1,1 ${-2 * radius},0`} />
-          ))}
-        </defs>
-        {RINGS.map(({ radius }) => <circle key={radius} r={radius} className="orbit-grid" />)}
-        {[0, 1, 2].map(track => (
-          <g key={track} className={`orbit-track orbit-track-${track}`}>
-            {RINGS.filter(ring => ring.track === track).map(({ radius, text }) => (
-              <text key={radius}>
-                <textPath href={`#${id}-${radius}`} startOffset={`${radius % 36}%`}>{text}</textPath>
-              </text>
-            ))}
-          </g>
-        ))}
+    <div ref={panel} className={`entry-orbit${visible && !paused ? ' is-running' : ''}`}>
+      <svg className="orbit-grid" viewBox="-440 -440 880 880" aria-hidden="true" focusable="false">
+        {RINGS.map(({ radius }) => <circle key={radius} r={radius} />)}
       </svg>
+      {[0, 1].map(track => (
+        <div key={track} className={`orbit-layer orbit-layer-${track}`} aria-hidden="true">
+          <svg viewBox="-440 -440 880 880" focusable="false">
+            {RINGS.filter(ring => ring.track === track).map(({ radius, text }) => (
+              <g key={radius}>
+                <path id={`${id}-${radius}`} fill="none" d={`M ${-radius},0 a ${radius},${radius} 0 1,1 ${2 * radius},0 a ${radius},${radius} 0 1,1 ${-2 * radius},0`} />
+                <text><textPath href={`#${id}-${radius}`} startOffset={`${radius % 36}%`}>{text}</textPath></text>
+              </g>
+            ))}
+          </svg>
+        </div>
+      ))}
       <span className="orbit-caption">Fig. 01 / Anatomy of an appeal</span>
       <button className="orbit-toggle" type="button" onClick={() => setPaused(value => !value)}>
         {paused ? 'Play animation' : 'Pause animation'}
       </button>
       <button
-        className="orbit-hold"
+        className="orbit-boost"
         type="button"
+        aria-pressed={boosted}
         disabled={paused}
-        onPointerDown={event => {
-          if (event.button !== 0) return
-          event.currentTarget.setPointerCapture(event.pointerId)
-          setOrbitSpeed(5)
-        }}
-        onLostPointerCapture={() => setOrbitSpeed(1)}
-        onKeyDown={event => {
-          if (event.key === ' ' || event.key === 'Enter') setOrbitSpeed(5)
-        }}
-        onKeyUp={() => setOrbitSpeed(1)}
-        onBlur={() => setOrbitSpeed(1)}
+        onClick={() => setBoosted(value => !value)}
       >
-        Hold to accelerate
+        Boost rotation
       </button>
     </div>
   )
@@ -96,9 +101,11 @@ export default function EntryScreen({ children, focusSignIn }) {
               <span>Health insurance appeals / India</span>
               <a href="#workflow">Explore the workflow <span aria-hidden="true">↓</span></a>
             </div>
-            <svg className="entry-wordmark" viewBox="0 0 1000 153" preserveAspectRatio="none" aria-hidden="true" focusable="false">
-              <text x="0" y="137" textLength="1000" lengthAdjust="spacingAndGlyphs">insureclear</text>
-            </svg>
+            <div className="entry-wordmark-mask">
+              <svg className="entry-wordmark" viewBox="0 0 1000 153" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+                <text x="0" y="137" textLength="1000" lengthAdjust="spacingAndGlyphs">insureclear</text>
+              </svg>
+            </div>
           </div>
         </section>
 

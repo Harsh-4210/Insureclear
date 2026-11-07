@@ -39,10 +39,9 @@ npm test
 npm run build
 ```
 
-Serve `web/frontend/dist` with the same-origin `/api` proxy. No access credential
-belongs in Vite variables or the shipped bundle. A deliberately separate API origin
-requires a configured base URL, exact credentialed CORS and matching cookie/CSRF
-behavior; verify those settings before use. Provider keys remain server-side.
+Serve `web/frontend/dist` and proxy `/api` on the same HTTPS origin. Configure
+`INSURECLEAR_CORS_ORIGINS` with that exact browser origin and keep Secure
+cookies enabled. Account credentials and provider keys stay server-side.
 
 ## Persistence and recovery
 
