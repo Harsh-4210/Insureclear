@@ -74,7 +74,7 @@ function Orbit() {
   )
 }
 
-export default function EntryScreen({ children, focusSignIn }) {
+export default function EntryScreen({ children, focusSignIn, preview = false }) {
   const signIn = useRef(null)
 
   useEffect(() => {
@@ -87,7 +87,7 @@ export default function EntryScreen({ children, focusSignIn }) {
       <header className="entry-nav">
         <a className="entry-brand" href="#top">insureclear</a>
         <a className="entry-workflow-link" href="#workflow">How it works</a>
-        <a className="entry-button" href="#sign-in">Sign in <span aria-hidden="true">↗</span></a>
+        <a className="entry-button" href="#sign-in">{preview ? 'Preview status' : 'Sign in'} <span aria-hidden="true">↗</span></a>
       </header>
 
       <main id="top">
@@ -130,9 +130,11 @@ export default function EntryScreen({ children, focusSignIn }) {
 
         <section ref={signIn} id="sign-in" className="entry-access" aria-labelledby="sign-in-title" tabIndex={-1}>
           <div className="entry-access-copy">
-            <span className="entry-kicker">02 / Private pilot</span>
-            <h2 id="sign-in-title">Sign in to your cases.</h2>
-            <p>Use the account provided by your pilot operator.</p>
+            <span className="entry-kicker">{preview ? '02 / Frontend preview' : '02 / Private pilot'}</span>
+            <h2 id="sign-in-title">{preview ? 'Explore the pilot interface.' : 'Sign in to your cases.'}</h2>
+            <p>{preview
+              ? 'This preview shows the public interface. Sign-in and document uploads require a connected private pilot environment.'
+              : 'Use the account provided by your pilot operator.'}</p>
             {children}
           </div>
           <Orbit />

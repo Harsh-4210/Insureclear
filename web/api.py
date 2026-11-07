@@ -14,8 +14,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.routing import APIRoute
+from starlette.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, PlainTextResponse, JSONResponse
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -76,6 +79,15 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Content-Type", "X-API-Key", "X-CSRF-Token"],
 )
+
+@app.exception_handler(RequestValidationError)
+async def safe_validation_error(_request: Request, error: RequestValidationError):
+    detail = [
+        {"loc": issue["loc"][:2], "msg": issue["msg"], "type": issue["type"]}
+        for issue in error.errors()
+    ]
+    return JSONResponse({"detail": detail}, status_code=422)
+
 
 @app.middleware("http")
 async def private_response_headers(request: Request, call_next):
@@ -294,8 +306,50 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/api/analyze")
+class AnalysisRoute(APIRoute):
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+
+        async def bounded_analysis(request: Request):
+            # FastAPI otherwise parses multipart data before resolving dependencies.
+            request.state.analysis_principal = await run_in_threadpool(
+                _guard, request, request.headers.get("x-api-key")
+            )
+            # Two PDFs or two text fields. Allow URL encoding of UTF-8 text.
+            limit = max(2 * MAX_UPLOAD_BYTES, 24 * MAX_TEXT_CHARS) + 64 * 1024
+            length = request.headers.get("content-length")
+            if length is not None:
+                try:
+                    declared = int(length)
+                except ValueError:
+                    raise HTTPException(400, "Invalid content length") from None
+                if declared < 0:
+                    raise HTTPException(400, "Invalid content length")
+                if declared > limit:
+                    raise HTTPException(413, "Analysis body exceeds the limit")
+
+            received = 0
+
+            async def bounded_receive():
+                nonlocal received
+                message = await request.receive()
+                if message["type"] == "http.request":
+                    received += len(message.get("body", b""))
+                    if received > limit:
+                        raise HTTPException(413, "Analysis body exceeds the limit")
+                return message
+
+            return await handler(Request(request.scope, receive=bounded_receive))
+
+        return bounded_analysis
+
+
+analysis_router = APIRouter(route_class=AnalysisRoute)
+
+
+@analysis_router.post("/api/analyze")
 async def analyze(
+    request: Request,
     mode: str = Form(...),
     case_id: str = Form(""),
     fresh_run: bool = Form(False),
@@ -303,8 +357,8 @@ async def analyze(
     policy_text: str | None = Form(None),
     denial_pdf: UploadFile | None = File(None),
     policy_pdf: UploadFile | None = File(None),
-    principal: dict = Depends(_guard),
 ) -> dict[str, Any]:
+    principal = request.state.analysis_principal
     normalized_mode = mode.strip().lower()
     if normalized_mode not in {"demo", "text", "pdf"}:
         raise HTTPException(status_code=400, detail="mode must be one of: demo, text, pdf")
@@ -332,8 +386,8 @@ async def analyze(
             payload["policy_text"] = _load_sample_text("sample_policy.txt")
             payload["denial_pdf"] = str(SAMPLES_DIR / "sample_denial.txt")
             payload["policy_pdf"] = str(SAMPLES_DIR / "sample_policy.txt")
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Demo mode is unavailable: {exc}") from exc
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=500, detail="Demo mode is unavailable") from exc
     elif normalized_mode == "text":
         payload["denial_text"] = _validate_text_input(denial_text, "denial_text")
         payload["policy_text"] = _validate_text_input(policy_text, "policy_text")
@@ -371,6 +425,9 @@ async def analyze(
         "status": "queued",
         "mode": normalized_mode,
     }
+
+
+app.include_router(analysis_router)
 
 
 @app.get("/api/jobs/{job_id}")

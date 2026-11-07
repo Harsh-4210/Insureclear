@@ -305,11 +305,11 @@ def call_llm(
     if PROVIDER == "groq":
         return _call_groq(prompt, system_prompt, temperature, max_output_tokens, json_mode=False)
 
-    full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
     _check_dispatch_budget(prompt, system_prompt, max_output_tokens)
 
     model = genai.GenerativeModel(
         model_name=MODEL_NAME,
+        system_instruction=system_prompt or None,
         generation_config=genai.GenerationConfig(
             temperature=temperature,
             max_output_tokens=max_output_tokens,
@@ -319,7 +319,7 @@ def call_llm(
     for attempt in range(1, max_retries + 1):
         try:
             start = time.time()
-            response = model.generate_content(full_prompt)
+            response = model.generate_content(prompt)
             elapsed = time.time() - start
             _total_calls += 1
             _total_time += elapsed
@@ -337,7 +337,7 @@ def call_llm(
                 print(f"[llm] Error type: {type(e).__name__}. Retrying ({attempt}/{max_retries})...")
                 time.sleep(2)
             else:
-                raise RuntimeError(f"LLM call failed after {max_retries} attempts: {e}")
+                raise RuntimeError(f"LLM call failed after {max_retries} attempts ({type(e).__name__})") from None
 
     raise RuntimeError("LLM call exhausted all retries.")
 
@@ -402,11 +402,11 @@ def _call_native_json(
         )
         return _parse_json_response(raw)
 
-    full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
     _check_dispatch_budget(prompt, system_prompt, max_output_tokens)
 
     model = genai.GenerativeModel(
         model_name=MODEL_NAME,
+        system_instruction=system_prompt or None,
         generation_config=genai.GenerationConfig(
             temperature=0.1,
             max_output_tokens=max_output_tokens,
@@ -417,7 +417,7 @@ def _call_native_json(
     for attempt in range(1, max_retries + 1):
         try:
             start = time.time()
-            response = model.generate_content(full_prompt)
+            response = model.generate_content(prompt)
             elapsed = time.time() - start
             _total_calls += 1
             _total_time += elapsed

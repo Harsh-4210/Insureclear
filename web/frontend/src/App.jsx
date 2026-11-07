@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { startJobPolling } from './client'
 import AccountSession, { CaseList } from './AccountSession'
+import EntryScreen from './EntryScreen'
 import ReviewEditor from './ReviewEditor'
 
 const MODES = [
@@ -564,5 +565,6 @@ function Workspace({ api, user, logout }) {
 }
 
 export default function App() {
+  if (import.meta.env.MODE === 'vercel-preview') return <EntryScreen preview />
   return <AccountSession>{({ api, user, logout }) => <Workspace key={user.user_id} api={api} user={user} logout={logout} />}</AccountSession>
 }

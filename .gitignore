@@ -21,3 +21,6 @@ web/frontend/dist/
 # Agent scratch and private pilot identity/review databases
 .superpowers/
 data/*.sqlite3*
+
+# Vercel account and deployment metadata
+.vercel/

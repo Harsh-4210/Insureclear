@@ -9,7 +9,7 @@ Supports revision based on Judge feedback.
 import hashlib
 import json
 import re
-from tools.document_context import ensure_prompt_budget, retrieval_fingerprint
+from tools.document_context import EVIDENCE_BOUNDARY, ensure_prompt_budget, retrieval_fingerprint
 from tools.llm_client import call_llm, dispatch_padding
 from tools.io_utils import save_checkpoint, load_checkpoint
 
@@ -27,7 +27,7 @@ Never invent a numeric response/escalation deadline, including a requested 15-da
 period. Only include a timing promise when its exact source evidence is supplied.
 You write for Indian insurers, citing IRDAI rules, not US/UK law.
 Internal policy-offset markers locate evidence for review; never copy them into a letter.
-"""
+""" + "\n" + EVIDENCE_BOUNDARY
 
 
 def _strip_known_policy_markers(letter: str, context: str) -> str:

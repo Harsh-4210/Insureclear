@@ -6,7 +6,7 @@ Outputs a scorecard and a final APPROVE/REVISE recommendation.
 """
 
 import hashlib
-from tools.document_context import ensure_prompt_budget
+from tools.document_context import EVIDENCE_BOUNDARY, ensure_prompt_budget
 from tools.llm_client import call_llm_json, dispatch_padding
 from tools.io_utils import save_checkpoint, load_checkpoint
 
@@ -20,7 +20,7 @@ Do not request a citation, case reference, statutory deadline, medical fact, or 
 detail merely because it would strengthen the letter. Mark it as missing only when
 it is present in the supplied facts or source material. Unsupported additions must
 be removed or rewritten as a request for the insurer to provide clarification.
-"""
+""" + "\n" + EVIDENCE_BOUNDARY
 
 
 def run(

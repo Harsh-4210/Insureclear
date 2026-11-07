@@ -1,433 +1,122 @@
-<div align="center">
-
 # InsureClear
 
-### Turn a rejected health claim into a reviewable appeal package.
+Turn an Indian health-insurance denial letter and policy into an appeal draft a human can review. InsureClear brings the insurer’s explanation, the relevant policy wording, and regulatory references into one case. It keeps generated drafts separate from the exact versions approved by a reviewer.
 
-<p>
-  <img src="https://img.shields.io/badge/status-completed%20implementation-0f766e?style=for-the-badge" alt="Completed implementation" />
-  <img src="https://img.shields.io/badge/domain-Indian%20health%20insurance-0e75b6?style=for-the-badge" alt="Indian health insurance" />
-  <img src="https://img.shields.io/badge/pipeline-5%20AI%20agents-155e9e?style=for-the-badge" alt="Five AI agents" />
-  <img src="https://img.shields.io/badge/quality%20gate-judge%20%2B%20revision-115e59?style=for-the-badge" alt="Judge and revision" />
-</p>
+**Release status** · Local MVP. Private pilot acceptance is open. Try the built-in fictional case first. [Pilot acceptance record](docs/PILOT_ACCEPTANCE.md)
 
-<p>
-  <a href="#experience-the-system">Experience the system</a> &nbsp; | &nbsp;
-  <a href="#architecture">Architecture</a> &nbsp; | &nbsp;
-  <a href="#run-it">Run it</a> &nbsp; | &nbsp;
-  <a href="#api-surface">API</a> &nbsp; | &nbsp;
-  <a href="docs/DEPLOYMENT.md">Deploy</a>
-</p>
+## Start with a fictional case
 
-</div>
+Use Python 3.11 and Node.js 22 for the documented setup. The offline CI workflow tests Python 3.11 and 3.13. Docker includes Poppler, Tesseract, and Hindi OCR data. [OCR setup](docs/OCR_SETUP.md)
 
----
+| What the setup touches | Where it happens |
+| --- | --- |
+| Dependencies | Python packages install into the project virtual environment. npm installs frontend packages into `web/frontend/node_modules`. |
+| Case storage | The local backend writes account and job SQLite databases, checkpoints, and generated artifacts. Reports can retain source text even after uploaded PDFs are removed. |
+| Network | When you run analysis, the server sends selected case text to the configured model provider. Local login and offline tests run without model calls. Provider keys are server-side. |
+| How to stop | Stop the two local servers with Ctrl+C. Use the documented retention and deletion process for case data and backups. [Pilot operations](docs/PILOT_OPERATIONS.md) |
 
-## The Product
-
-InsureClear is a multi-agent AI system for rejected Indian health-insurance
-claims. It reads a denial letter and the relevant policy, separates facts from
-interpretation, finds possible policy and regulatory arguments, drafts an
-appeal, and sends the result through a quality gate before creating the final
-package.
-
-It is built for **reviewable assistance**, not automatic legal advice:
-uncertain citations are labelled for manual verification, source documents are
-not retained after API processing, and a person must review the letter before
-sending it.
-
-<div align="center">
-
-![InsureClear architecture](docs/architecture.svg)
-
-</div>
-
-## Why It Is Interesting
-
-| Problem | InsureClear response |
-|---|---|
-| A denial mixes facts, clauses, and conclusions | The Auditor creates a structured case snapshot. |
-| Policy language is difficult to challenge | The Policy Analyst looks for exclusions, limits, waiting periods, and counter-arguments. |
-| Regulatory claims can be overconfident | The IRDAI Checker attaches source-review metadata and official portals. |
-| A first draft may contain weak or unsupported arguments | The Judge scores it and can trigger up to two revisions. |
-| Long-running jobs can disappear on restart | A SQLite-backed queue and checkpoints recover named cases. |
-| Sensitive PDFs should not linger | Uploaded source files are removed after processing. |
-
----
-
-## Experience The System
-
-### Fastest path: run the built-in demo
-
-```bash
-python orchestrator/cli.py --demo
-```
-
-The demo uses the included sample denial and policy files. It produces:
-
-```text
-data/output/<case_id>_<timestamp>/
-|-- appeal_letter.txt
-`-- full_report.json
-```
-
-### Browser experience
-
-Run these commands from the repository root. Create the first invite-only
-account once. The CLI prompts for a password without echoing it.
+From the repository root in PowerShell:
 
 ```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --require-hashes -r requirements.lock
+Copy-Item .env.example .env
 .\.venv\Scripts\python.exe -m tools.manage_users --db data/auth.sqlite3 create --username claimant --org-id local-pilot --role claimant
 ```
 
-Start the API in one PowerShell terminal:
+The account command prompts for a password without echoing it. To run the fictional demo, set `LLM_PROVIDER=groq` and your authorized `GROQ_API_KEY` in `.env`. Gemini code is present and has a separate SDK migration and release-qualification gate. [Provider support boundary](docs/PILOT_OPERATIONS.md#provider-support-boundary)
+
+In the API terminal:
 
 ```powershell
 $env:INSURECLEAR_AUTH_MODE = 'accounts'
 $env:INSURECLEAR_AUTH_DB = 'data/auth.sqlite3'
 $env:INSURECLEAR_CORS_ORIGINS = 'http://127.0.0.1:5173'
 $env:INSURECLEAR_AUTH_COOKIE_SECURE = 'false'
-.\.venv\Scripts\python.exe -m uvicorn web.api:app --host 127.0.0.1 --port 8000
+.\.venv\Scripts\python.exe -m uvicorn web.api:app --host 127.0.0.1 --port 8000 --no-proxy-headers
 ```
 
-Start the React interface in a second terminal:
+In a second terminal:
 
 ```powershell
-cd web/frontend
+Set-Location web/frontend
 npm ci
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173`. Vite proxies the browser's same-origin `/api`
-requests to FastAPI. For deployed environments, use the HTTPS setup in
-[pilot operations](docs/PILOT_OPERATIONS.md).
+Open [the local workspace](http://127.0.0.1:5173/), sign in, choose **Demo case**, and start the analysis. The demo uses fictional inputs and calls the configured provider. To exercise human approval locally, provision a separate `reviewer` in the same organization and open the case from that account.
 
-The interface provides:
+<details>
+<summary>CLI and Docker alternatives</summary>
 
-- Demo, plain-text, and PDF input modes
-- Live job progress across every agent stage
-- Case snapshot and policy analysis views
-- IRDAI findings and citation-review status
-- Judge scorecard and revision state
-- Appeal letter and JSON report downloads
+Run the demo directly from the repository root:
 
-### Streamlit experience
-
-```bash
-streamlit run app.py
+```powershell
+.\.venv\Scripts\python.exe orchestrator/cli.py --demo
 ```
 
----
+The CLI also supports paired PDF inputs, paired text files, and named checkpoints. Run `orchestrator/cli.py --help` for the options. The [deployment guide](docs/DEPLOYMENT.md) covers Docker, persistent volumes, and production configuration.
 
-## Architecture
+</details>
 
-### End-to-end reasoning flow
+## What you can inspect
+
+- **Case analysis.** Open a fictional demo, paste a denial and policy, or upload paired PDFs. Track progress through extraction, policy analysis, regulatory checking, drafting, and model review.
+- **Evidence.** Check exact policy excerpts, source offsets, regulatory versions, and any document coverage limits reported by the retrieval pipeline. See the [regulatory source inventory](docs/REGULATORY_SOURCES.md).
+- **Human review.** Edit the draft, see evidence validation issues, and preserve the revision history. A reviewer records facts, coverage, and legal-applicability checks before approval. A later edit invalidates approval. The approved export serves the version and content that were reviewed.
+- **Operations.** Named accounts and organization boundaries restrict case access. The backend provides bounded queue admission, progress, cooperative cancellation, confined deletion, and readiness checks. [Pilot operations](docs/PILOT_OPERATIONS.md)
+
+<details>
+<summary>Architecture and API</summary>
+
+The browser uses the same-origin `/api` path. FastAPI authenticates the session and stores queued cases in SQLite. A single worker claims a case, runs the document and model stages, and stores a draft with source snapshots. The review API stores later versions and decisions separately.
 
 ```mermaid
 flowchart LR
-    A[Denial PDF or text] --> X[PDF extraction + validation]
-    B[Policy PDF or text] --> X
-    X --> C[Auditor]
-    C --> D[Policy Analyst]
-    D --> E[IRDAI Checker]
-    E --> F[Appeal Writer]
-    F --> G[Judge]
-    G -->|score >= 0.75| H[Appeal package]
-    G -->|score < 0.75| I[Revision request]
-    I --> F
-    H --> J[TXT letter + JSON report]
+    A[React workspace] -->|Same-origin API| B[FastAPI]
+    B --> C[(SQLite accounts, cases, reviews)]
+    C --> D[Queue worker]
+    D --> E[Document retrieval and model stages]
+    E --> C
+    B --> F[Version-bound approved export]
 ```
 
-### Control plane and job lifecycle
-
-```mermaid
-stateDiagram-v2
-    [*] --> queued: POST /api/analyze
-    queued --> running: durable worker claims job
-    running --> completed: artifacts written
-    running --> failed: captured error
-    completed --> [*]
-    failed --> [*]
-
-    note right of running
-      Uploaded PDFs are temporary.
-      SQLite records survive restart.
-    end note
-```
-
-### Agent responsibilities
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant Q as SQLite queue
-    participant A as Auditor
-    participant P as Policy Analyst
-    participant I as IRDAI Checker
-    participant W as Appeal Writer
-    participant J as Judge
-
-    U->>Q: Submit denial + policy
-    Q->>A: Claim facts and denial reason
-    A->>P: Structured case snapshot
-    P->>I: Policy findings and counter-arguments
-    I->>W: Regulatory leads + appeal pathway
-    W->>J: Draft appeal
-    alt score below 0.75
-        J->>W: Top changes, missing elements, flags
-        W->>J: Revised appeal
-    else approved
-        J-->>Q: Final score and recommendation
-    end
-    Q-->>U: Letter and full report
-```
-
-<details>
-<summary><b>Open the implementation map</b></summary>
-<br />
-
-| Layer | Implementation | Responsibility |
-|---|---|---|
-| Intake | `orchestrator/cli.py`, `web/api.py`, `app.py` | CLI, FastAPI, and Streamlit entry points |
-| Extraction | `tools/pdf_reader.py` | Digital PDF extraction with Tesseract OCR fallback |
-| Reasoning | `agents/` | Auditor, policy, IRDAI, writer, and judge agents |
-| Orchestration | `orchestrator/main.py` | Sequencing, score threshold, revisions, progress events |
-| State | `sessions/`, `tools/job_store.py` | Checkpoints and durable SQLite jobs |
-| Artifacts | `tools/io_utils.py` | Appeal letter and full JSON report |
-| Browser UI | `web/frontend/src/` | React workflow, progress rail, analysis tabs, downloads |
-| Deployment | `Dockerfile`, `docker-compose.yml` | API, OCR dependencies, and Nginx frontend |
+| Routes | Purpose |
+| --- | --- |
+| `POST /api/auth/login`, `GET /api/auth/session`, `POST /api/auth/logout` | Create, inspect, and revoke named-account sessions |
+| `POST /api/analyze`, `GET /api/jobs`, `GET /api/jobs/{id}` | Queue and inspect authorized cases |
+| `GET /api/jobs/{id}/report`, `GET /api/jobs/{id}/letter` | Read generated analysis and draft text |
+| `GET/PUT /api/jobs/{id}/review`, `POST /api/jobs/{id}/review/decision` | Inspect revisions, edit a draft, and record a reviewer decision |
+| `GET /api/jobs/{id}/download/approved-letter` | Export the exact approved revision |
+| `POST /api/jobs/{id}/cancel`, `DELETE /api/jobs/{id}` | Request cancellation or delete a case within the owner/admin boundary |
+| `GET /health`, `GET /ready` | Operator liveness and configuration checks |
 
 </details>
 
----
+## Security and model controls
 
-## Quality And Safety Controls
+| Layer | Implemented controls |
+| --- | --- |
+| Browser | Same-origin API, memory-only CSRF state, no API keys in the bundle, and a content security policy at the hosted frontend. The Vercel preview build contains the landing page only. |
+| API | Account mode by default, HTTP-only cookies with Secure enabled for HTTPS, exact Origin and CSRF checks on mutations, case ownership and organization checks, and authorization before analysis upload parsing. |
+| Files and data | Bounded request bodies, PDF and OCR limits, private responses with `no-store`, and confined cleanup paths. Production storage, backup encryption, and retention need environment verification. |
+| Model | Case text is treated as untrusted evidence. Provider requests separate system instructions from document text. Context and runtime budgets bound processing. Evidence validation flags or removes unsupported references and human review gates approved exports. |
 
-### Judge-gated output
+Generated material is a draft for human review. The pilot requires qualified review of legal applicability and representative cases. The application prepares exports for users to review and send themselves. [Regulatory review checklist](docs/REGULATORY_REVIEW_CHECKLIST.md)
 
-The pipeline does not blindly accept the first draft:
+## Verification and release
 
-- Approval threshold: `0.75`
-- Maximum automatic revisions: `2`
-- Judge checks factual accuracy, citation quality, argument strength, structure,
-  missing elements, weak arguments, and hallucination flags
+Run the offline checks from the repository root:
 
-### Citation review
-
-The application includes official starting points for verification:
-
-- [IRDAI](https://irdai.gov.in/)
-- [Bima Bharosa](https://bimabharosa.irdai.gov.in/)
-- [Council for Insurance Ombudsmen](https://cioins.co.in/)
-
-Generated regulatory entries are marked `manual_verification_required` unless
-an exact official document has been checked. See
-[docs/REGULATORY_SOURCES.md](docs/REGULATORY_SOURCES.md).
-
-### Document coverage and source provenance
-
-Agent prompts use bounded, deterministic source retrieval. Short sources are
-included completely when they fit; longer documents include selected, located
-excerpts and explicit omission metadata. The full input text remains available
-for evidence checks. A high model score cannot override incomplete coverage.
-
-The local registry pins three official regulatory artifacts; nine health-circular
-excerpts are currently curated for runtime use. Writer, Judge and final validator
-share the selected primary evidence. Source provenance does not establish legal
-applicability: these cases return `REVIEW_REQUIRED` when otherwise approved.
-Failed final evidence checks return `VALIDATION_ERROR`. All three interfaces use
-the same pipeline, including Streamlit.
-
-- [Source registry and maintenance](docs/REGULATORY_SOURCES.md)
-- [Live regression baseline](docs/LIVE_REGRESSION_2026-11-05.md)
-- [Pilot-to-growth scaling roadmap](docs/SCALING_ROADMAP.md)
-
-Context settings in `.env.example` use a conservative UTF-8 byte upper bound,
-not an exact model tokenizer: `INSURECLEAR_PROMPT_BUDGET` (16,000),
-`INSURECLEAR_CHUNK_UNITS` (1,200), `INSURECLEAR_CHUNK_OVERLAP` (120), and
-`INSURECLEAR_REGULATORY_BUDGET` (3,500). Actual provider dispatch also reserves
-output, JSON instructions and Groq reasoning tokens; oversized requests fail
-explicitly rather than bypassing the bound.
-
-### Privacy boundary
-
-- Account-mode browser access uses revocable HttpOnly sessions and owner/org authorization.
-- Cookie mutations require an exact allowed Origin and session-bound CSRF token.
-- Upload and text size limits are configurable.
-- PDF signatures and content types are validated.
-- Uploaded PDFs are deleted after processing.
-- Private job payloads and reports retain source text/snapshots for review; protect and expire them.
-- Human approvals are versioned separately from the model score; edits invalidate approval.
-- Do not commit `.env`, claim documents, or generated personal data.
-
----
-
-## Run It
-
-### Requirements
-
-- Python 3.10+
-- A Gemini or Groq API key; select the provider with `LLM_PROVIDER`
-- Node.js and npm for the React UI
-- Tesseract and Poppler for scanned PDFs outside Docker
-
-### Install
-
-```bash
-git clone https://github.com/Harsh-4210/insureclear.git
-cd insureclear
-
-python -m venv venv
-venv\Scripts\activate        # Windows
-# source venv/bin/activate   # macOS/Linux
-
-python -m pip install --require-hashes -r requirements.lock
-```
-
-Create `.env` from the template:
-
-```bash
-copy .env.example .env     # Windows
-# cp .env.example .env     # macOS/Linux
-```
-
-For Gemini, set `GEMINI_API_KEY` in `.env`. For Groq, set `LLM_PROVIDER=groq`
-and `GROQ_API_KEY` (or a key pool). Provider credentials stay server-side.
-The current default Gemini model in this project is
-`gemini-3.6-flash`; override it with `GEMINI_MODEL` when needed.
-
-### Input modes
-
-```bash
-# Built-in sample
-python orchestrator/cli.py --demo
-
-# PDF documents
-python orchestrator/cli.py --denial data/input/denial.pdf --policy data/input/policy.pdf
-
-# Plain text documents
-python orchestrator/cli.py --text-denial denial.txt --text-policy policy.txt
-
-# Resume a named case or force a clean rerun
-python orchestrator/cli.py --demo --case case_001
-python orchestrator/cli.py --demo --case case_001 --fresh
-```
-
-### Docker
-
-```bash
-copy .env.example .env     # Windows
-# cp .env.example .env     # macOS/Linux
-docker compose up --build
-```
-
-- Frontend: `http://localhost:8080`
-- API: `http://localhost:8000`
-- Health: `http://localhost:8000/health`
-
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and
-[docs/OCR_SETUP.md](docs/OCR_SETUP.md) for production and OCR configuration.
-
----
-
-## API Surface
-
-The pilot uses named-account cookies, exact Origin/CSRF checks for mutations, and
-owner/organization authorization on every case route. `X-API-Key` is accepted only
-in explicitly configured trusted-local legacy mode. Legacy requests can access only unowned legacy cases outside the reserved account checkpoint namespace.
-See [operator setup](docs/PILOT_OPERATIONS.md) and the
-[phased implementation plan](docs/superpowers/plans/2026-11-06-production-implementation.md).
-
-| Method | Endpoint | Purpose |
-|---|---|---|
-| `GET` | `/health` | Process liveness |
-| `GET` | `/ready` | Local dependency/config readiness, without paid inference |
-| `POST` | `/api/auth/login` | Invite-only account login |
-| `GET` | `/api/auth/session` | Current public identity and CSRF token |
-| `POST` | `/api/auth/logout` | Revoke current session |
-| `GET` | `/api/jobs` | Authorized case list |
-| `GET/PUT` | `/api/jobs/{job_id}/review` | Read history/save an immutable draft revision |
-| `POST` | `/api/jobs/{job_id}/review/decision` | Reviewer approves or requests changes |
-| `GET` | `/api/jobs/{job_id}/download/approved-letter` | Exact currently approved version |
-| `POST` | `/api/jobs/{job_id}/cancel` | Cooperative owner/admin cancellation |
-| `DELETE` | `/api/jobs/{job_id}` | Owner/admin confined private-case cleanup |
-| `POST` | `/api/analyze` | Queue a demo, text, or PDF analysis |
-| `GET` | `/api/jobs/{job_id}` | Read job status and progress |
-| `GET` | `/api/jobs/{job_id}/letter` | Return appeal text |
-| `GET` | `/api/jobs/{job_id}/report` | Return the full report as JSON |
-| `GET` | `/api/jobs/{job_id}/download/letter` | Download `appeal_letter.txt` |
-| `GET` | `/api/jobs/{job_id}/download/report` | Download `full_report.json` |
-
-<details>
-<summary><b>Trusted-local legacy API example</b></summary>
-<br />
-
-```bash
-curl -H "X-API-Key: $INSURECLEAR_API_KEY" -X POST http://localhost:8000/api/analyze \
-  -F "mode=demo" \
-  -F "case_id=demo_case"
-```
-
-Poll the queued case with the same operator key:
-
-```bash
-curl -H "X-API-Key: $INSURECLEAR_API_KEY" \
-  http://localhost:8000/api/jobs/<job_id>
-```
-
-</details>
-
----
-
-## Test And Ship
-
-```bash
-# Backend tests
-.venv\Scripts\python.exe -m pytest tests -q
-
-# Frontend production build
-cd web/frontend
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+Push-Location web/frontend
+npm ci
+npm test
 npm run build
+Pop-Location
 ```
 
-The test suite covers pipeline execution, judge thresholds, revision behavior,
-PDF extraction, OCR fallback, API lifecycle, upload validation, and artifact
-creation.
+The archived Groq synthetic runs on earlier commit `423c019` scored **10/10** and **8/10** on verdict accuracy. Both recorded zero unsupported claims detected by the evaluator and zero execution failures. The 8/10 run failed the strict verdict gate. Ten fictional cases do not measure performance on real claims. The final candidate requires two fresh strict runs, qualified review, capacity testing, and deployment acceptance. [Evaluation methodology](docs/EVIDENCE_FOUNDATIONS_RESULT.md) · [Pilot acceptance record](docs/PILOT_ACCEPTANCE.md)
 
----
-
-## Project Structure
-
-```text
-insureclear/
-|-- agents/                 Five specialized reasoning agents
-|-- orchestrator/           Pipeline orchestration and CLI
-|-- tools/                  OCR, LLM, persistence, source metadata, queue
-|-- web/api.py              FastAPI service and durable worker
-|-- web/frontend/           React + Vite interface and Nginx image
-|-- data/samples/           Built-in demo documents
-|-- docs/                   Deployment, OCR, regulatory, architecture visual
-|-- tests/                  Automated backend and pipeline tests
-|-- Dockerfile              API image with Poppler and Tesseract
-|-- docker-compose.yml      API + frontend deployment
-`-- app.py                  Streamlit interface
-```
-
----
-
-## Responsible Use
-
-InsureClear helps organize evidence and prepare a draft. It does not guarantee
-claim approval, replace a lawyer, or establish that an insurer violated a law.
-Review every personal detail, policy clause, deadline, citation, and generated
-argument before submission.
-
-<div align="center">
-
-### Built for clearer decisions, not louder claims.
-
-<a href="https://github.com/Harsh-4210/insureclear">Source</a> &nbsp; | &nbsp;
-<a href="docs/REGULATORY_SOURCES.md">Sources</a> &nbsp; | &nbsp;
-<a href="docs/DEPLOYMENT.md">Deployment</a>
-
-</div>
+The Vercel configuration builds a frontend-only preview from `web/frontend`. The connected pilot requires a durable FastAPI host, exact HTTPS origin configuration, and environment smoke tests. [Deployment guide](docs/DEPLOYMENT.md) · [Scaling roadmap](docs/SCALING_ROADMAP.md)

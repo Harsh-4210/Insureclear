@@ -21,6 +21,32 @@ The API is available at `http://localhost:8000` and the frontend at
 The API container installs Poppler, Tesseract, and the Hindi language data so
 scanned Indian documents can use the OCR fallback.
 
+## Vercel frontend preview
+
+Deploy from `web/frontend`, which contains the Vercel project configuration.
+The configured build shows the landing page with sign-in and uploads disabled.
+Its browser policy disables network requests and form submission. Use the
+project's Deployment Protection settings for previews that need restricted access.
+
+```powershell
+Set-Location web/frontend
+vercel login
+vercel deploy
+```
+
+Confirm the preview URL serves the landing page, that `/api/auth/session` is
+unavailable, and that the content security policy blocks outbound connections.
+The preview does not use case data, API credentials, or provider keys.
+
+For a connected pilot, host FastAPI and its worker where the private SQLite
+databases, checkpoints and artifacts can persist. Set the project to the full
+`npm run build`, change the CSP to allow same-origin connections and forms, and
+rewrite `/api/:path*` to `https://<approved-api-host>/api/:path*` through Vercel.
+Use the actual frontend HTTPS origin in the backend allowlist. Keep API response
+caching disabled and verify login cookies, CSRF, organization isolation, PDF
+upload size, approved exports and rollback before enrolling users. See
+[Vercel rewrites](https://vercel.com/docs/routing/rewrites).
+
 ## Manual deployment
 
 API:

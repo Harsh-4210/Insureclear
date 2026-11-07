@@ -90,3 +90,36 @@ def test_completed_private_reads_and_downloads_are_not_cacheable(access, tmp_pat
         assert response.headers.get("cache-control") == "no-store"
         assert "Cookie" in response.headers.get("vary", "")
         assert clients["bob"].get(f"/api/jobs/{job_id}{suffix}").status_code == 404
+
+def test_guest_malformed_multipart_is_denied_before_parsing(access):
+    from fastapi.testclient import TestClient
+    response = TestClient(api.app).post("/api/analyze", content=b"invalid multipart",
+                                        headers={"Content-Type": "multipart/form-data"})
+    assert response.status_code == 401
+
+
+def test_csrf_denial_precedes_parsing(access):
+    _, clients, _ = access
+    clients["alice"].headers.pop("X-CSRF-Token")
+    response = clients["alice"].post("/api/analyze", content=b"invalid multipart",
+                                     headers={"Content-Type": "multipart/form-data"})
+    assert response.status_code == 403
+
+
+def test_authorized_chunked_analysis_body_is_bounded(access, monkeypatch):
+    _, clients, _ = access
+    monkeypatch.setattr(api, "MAX_UPLOAD_BYTES", 1024)
+    monkeypatch.setattr(api, "MAX_TEXT_CHARS", 1024)
+    stream = (b"x" * 1024 for _ in range(100))
+    response = clients["alice"].post("/api/analyze", content=stream,
+                                     headers={"Content-Type": "application/x-www-form-urlencoded"})
+    assert response.status_code == 413
+
+def test_validation_error_does_not_echo_raw_input(access):
+    _, clients, _ = access
+    private_marker = "synthetic-sensitive-source-text"
+    response = clients["alice"].put("/api/jobs/missing/review",
+        json={"letter": private_marker, "expected_version": private_marker})
+    assert response.status_code == 422
+    assert "expected_version" in response.text
+    assert private_marker not in response.text

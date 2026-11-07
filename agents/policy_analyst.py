@@ -6,7 +6,7 @@ Tells the appeal whether the rejection was legitimately applied or not.
 """
 
 import hashlib
-from tools.document_context import fit_document_prompt, source_marker, retrieval_fingerprint
+from tools.document_context import EVIDENCE_BOUNDARY, fit_document_prompt, source_marker, retrieval_fingerprint
 from tools.llm_client import call_llm_json, dispatch_padding
 from tools.irdai_knowledge import POLICY_RED_FLAGS
 from tools.io_utils import save_checkpoint, load_checkpoint
@@ -19,7 +19,7 @@ and identifying when those clauses have been wrongly applied.
 Analyze the contract only. Regulatory obligations are handled separately from pinned sources.
 Preserve every exception and negation: a waiting period except for accidents does
 not mean it applies only to accidents. Do not invent a legal obligation.
-"""
+""" + "\n" + EVIDENCE_BOUNDARY
 
 
 def run(policy_text: str, auditor_output: dict, case_id: str) -> dict:
