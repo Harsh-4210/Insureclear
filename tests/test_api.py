@@ -111,3 +111,18 @@ def test_waiting_worker_takes_over_existing_job_when_owner_exits(monkeypatch, tm
     finally:
         stop.set()
         worker.join(timeout=5)
+
+
+def test_worker_tolerates_input_already_removed_by_concurrent_cleanup(monkeypatch, tmp_path):
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    root = tmp_path / "inputs"; folder = root / "cleanup_job"; folder.mkdir(parents=True)
+    payload = {"case_id": "cleanup_case", "denial_pdf": "unused", "policy_pdf": "unused", "input_dir": str(folder)}
+    store.create("cleanup_job", payload, "pdf", "cleanup_case", False)
+    assert store.claim_next()[0] == "cleanup_job"
+    monkeypatch.setattr(api, "job_store", store)
+    monkeypatch.setattr(api, "JOB_INPUTS_DIR", root)
+    monkeypatch.setattr(api, "run_pipeline", lambda **kwargs: {"appeal_letter": "Synthetic draft"})
+    def already_removed(path): raise FileNotFoundError("Concurrent case cleanup already removed the directory")
+    monkeypatch.setattr(api.shutil, "rmtree", already_removed)
+    api._run_job("cleanup_job", payload)
+    assert store.get("cleanup_job")["status"] == "completed"

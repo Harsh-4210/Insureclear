@@ -250,7 +250,10 @@ def _run_job(job_id: str, payload: dict[str, Any]) -> None:
             if safe_input.name != job_id:
                 raise ValueError("Unsafe worker cleanup path")
             if safe_input.exists():
-                shutil.rmtree(safe_input)
+                try:
+                    shutil.rmtree(safe_input)
+                except FileNotFoundError:
+                    pass  # A concurrent authorized cleanup already removed it.
 
 
 def _worker_loop() -> None:
