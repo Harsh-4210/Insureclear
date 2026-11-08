@@ -6,7 +6,7 @@ This is the foundation every other agent builds on.
 """
 
 import hashlib
-from tools.document_context import fit_document_prompt, source_marker, retrieval_fingerprint
+from tools.document_context import EVIDENCE_BOUNDARY, fit_document_prompt, source_marker, retrieval_fingerprint
 from tools.llm_client import call_llm_json, dispatch_padding
 from tools.io_utils import save_checkpoint, load_checkpoint
 
@@ -16,7 +16,7 @@ You read denial letters and policy documents issued by Indian insurers
 (Star Health, HDFC Ergo, Niva Bupa, ICICI Lombard, New India Assurance, etc.)
 and extract precise, structured information.
 Be exact. Quote directly from documents. Do not infer what is not written.
-"""
+""" + "\n" + EVIDENCE_BOUNDARY
 
 
 def run(denial_text: str, policy_text: str, case_id: str) -> dict:

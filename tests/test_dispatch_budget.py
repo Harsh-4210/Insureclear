@@ -52,3 +52,33 @@ def test_native_groq_json_honors_transport_retry_bound(monkeypatch):
     with pytest.raises(RuntimeError):
         llm_client._call_native_json("Return JSON", "", 1, 100)
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_gemini_accounts_successful_response_tokens(monkeypatch, native):
+    fake_gemini(monkeypatch, [])
+    class Model:
+        def __init__(self, **kwargs): pass
+        def generate_content(self, prompt): return SimpleNamespace(text='{"ok": true}', usage_metadata=SimpleNamespace(total_token_count=123))
+    monkeypatch.setattr(llm_client.genai, "GenerativeModel", Model)
+    monkeypatch.setattr(llm_client, "_total_tokens", 0)
+    if native: llm_client._call_native_json("Return JSON", "system", 1, 512)
+    else: llm_client.call_llm("Return text", max_retries=1, max_output_tokens=512)
+    assert llm_client.get_stats()["total_tokens"] == 123
+
+@pytest.mark.parametrize("native", [False, True])
+def test_gemini_sends_instructions_separately_from_untrusted_text(monkeypatch, native):
+    fake_gemini(monkeypatch, [])
+    calls = []
+    class Model:
+        def __init__(self, **kwargs):
+            calls.append(kwargs.get("system_instruction"))
+        def generate_content(self, prompt):
+            calls.append(prompt)
+            return SimpleNamespace(text='{"ok": true}')
+    monkeypatch.setattr(llm_client.genai, "GenerativeModel", Model)
+    if native:
+        llm_client._call_native_json("untrusted case text", "trusted instruction", 1, 512)
+    else:
+        llm_client.call_llm("untrusted case text", "trusted instruction", max_retries=1, max_output_tokens=512)
+    assert calls == ["trusted instruction", "untrusted case text"]

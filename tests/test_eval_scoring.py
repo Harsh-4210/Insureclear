@@ -307,3 +307,12 @@ def test_manifest_binds_effective_pipeline_runtime_limits(monkeypatch, name, new
     monkeypatch.setenv(name, new_value)
     changed = run_eval.build_evaluation_manifest(CASE, denial, policy)
     assert baseline != changed
+
+
+def test_manifest_binds_dependency_lock_and_python_runtime():
+    import sys
+    from eval.run_eval import build_evaluation_manifest
+    denial, policy = build_documents(CASE)
+    manifest = build_evaluation_manifest(CASE, denial, policy)
+    assert "requirements.lock" in manifest["generation_source_sha256"]
+    assert manifest["config"]["python_version"] == list(sys.version_info[:3])

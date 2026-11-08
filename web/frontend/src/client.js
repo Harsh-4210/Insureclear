@@ -33,7 +33,8 @@ export function createClient({ base = '', fetchImpl = (...args) => fetch(...args
       if (!response.ok) {
         const body = await response.json().catch(() => ({}))
         if (epoch !== generation) throw new DOMException('Session cleared', 'AbortError')
-        if (response.status === 401 && path !== '/api/auth/login') { clear(); onExpired() }
+        const anonymousProbe = path === '/api/auth/session' && !csrf
+        if (response.status === 401 && path !== '/api/auth/login' && !anonymousProbe) { clear(); onExpired() }
         if (response.status === 401 && path === '/api/auth/login') throw Object.assign(new Error(body.detail || 'Invalid username or password'), { status: 401 })
         throw new ApiError(response.status, body.detail || 'Unable to complete request')
       }

@@ -10,10 +10,11 @@ class PipelineBudgetExceeded(RuntimeError): pass
 
 def usage_delta(before, after):
     result = {key: after[key] for key in ("provider", "model", "groq_configured_key_count") if key in after}
-    for key in ("total_calls", "total_tokens", "total_retries", "total_429s", "total_time_seconds"):
+    for key in ("total_calls", "total_tokens", "total_retries", "total_429s", "total_time_seconds", "unreported_usage_calls"):
         result[key] = max(0, after.get(key, 0) - before.get(key, 0))
     result["total_time_seconds"] = round(result["total_time_seconds"], 3)
     result["avg_time_per_call"] = round(result["total_time_seconds"] / result["total_calls"], 3) if result["total_calls"] else 0
+    result["usage_complete"] = result["unreported_usage_calls"] == 0
     result["usage_scope"] = "case"
     return result
 
@@ -36,5 +37,7 @@ class RuntimeControl:
             raise PipelineTimedOut("Case time limit reached at a stage boundary")
         if self.stats:
             usage = usage_delta(self.initial, self.stats())
+            if usage["unreported_usage_calls"]:
+                raise PipelineBudgetExceeded("Provider usage metadata unavailable; cannot enforce case token budget")
             if usage["total_calls"] >= self.max_calls or usage["total_tokens"] >= self.max_tokens:
                 raise PipelineBudgetExceeded("Case provider budget reached at a stage boundary")

@@ -9,7 +9,7 @@ This is what makes the appeal legally grounded — not generic complaints.
 from tools.llm_client import call_llm_json, dispatch_padding
 from tools.irdai_knowledge import CITATION_REVIEW_STATUS, OFFICIAL_SOURCES
 from tools.regulatory_registry import load_registry
-from tools.document_context import context_config, ensure_prompt_budget
+from tools.document_context import EVIDENCE_BOUNDARY, context_config, ensure_prompt_budget
 from tools.io_utils import save_checkpoint, load_checkpoint
 from tools.agent_validation import AgentOutputError, validate_agent_output
 import json
@@ -23,7 +23,7 @@ circular identifier, timeline, and Ombudsman summary as a lead requiring human
 verification against an official source. Never invent a regulation number,
 case name, date, URL, or legal conclusion. Mark uncertain items as requiring
 verification and distinguish policy arguments from confirmed law.
-"""
+""" + "\n" + EVIDENCE_BOUNDARY
 
 
 def _apply_citation_review_metadata(result: dict) -> dict:
@@ -181,7 +181,8 @@ Return a JSON object:
 """
 
     context_hash = hashlib.sha256(json.dumps(
-        [auditor_output, policy_analyst_output, registry.fingerprint, evidence.as_dict(), context_config()],
+        [SYSTEM_PROMPT, prompt, auditor_output, policy_analyst_output,
+         registry.fingerprint, evidence.as_dict(), context_config()],
         sort_keys=True, ensure_ascii=False,
     ).encode()).hexdigest()
     ensure_prompt_budget(prompt, SYSTEM_PROMPT, 1536 + dispatch_padding(True))

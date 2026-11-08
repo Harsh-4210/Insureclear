@@ -3,7 +3,7 @@
 ## Local Docker deployment
 
 1. Copy `.env.example` to `.env`.
-2. Set `GEMINI_API_KEY`.
+2. Set `LLM_PROVIDER=groq` and your authorized `GROQ_API_KEY` for the fictional demo.
 3. Set `INSURECLEAR_AUTH_MODE=accounts`, a persistent private auth DB and exact
    `INSURECLEAR_CORS_ORIGINS`. Provision invite-only accounts with the CLI in
    [PILOT_OPERATIONS.md](PILOT_OPERATIONS.md). There is no default account.
@@ -21,6 +21,78 @@ The API is available at `http://localhost:8000` and the frontend at
 The API container installs Poppler, Tesseract, and the Hindi language data so
 scanned Indian documents can use the OCR fallback.
 
+## Vercel frontend preview
+
+Deploy from `web/frontend`, which contains the Vercel project configuration.
+The configured build shows the landing page with sign-in and uploads disabled.
+Its browser policy disables network requests and form submission. Use the
+project's Deployment Protection settings for previews that need restricted access.
+
+```powershell
+Set-Location web/frontend
+vercel login
+vercel deploy
+```
+
+Confirm the preview URL serves the landing page, that `/api/auth/session` is
+unavailable, and that the content security policy blocks outbound connections.
+The preview does not use case data, API credentials, or provider keys.
+
+For a connected pilot, host FastAPI and its worker where the private SQLite
+databases, checkpoints and artifacts can persist. Set the project to the full
+`npm run build`, change the CSP to allow same-origin connections and forms, and
+rewrite `/api/:path*` to `https://<approved-api-host>/api/:path*` through Vercel.
+Use the actual frontend HTTPS origin in the backend allowlist. Keep API response
+caching disabled and verify login cookies, CSRF, organization isolation, PDF
+upload size, approved exports and rollback before enrolling users. See
+[Vercel rewrites](https://vercel.com/docs/routing/rewrites).
+
+## Persistent pilot host
+
+The connected pilot uses one Linux host running the API, worker, frontend, and
+HTTPS proxy. The separate Vercel deployment remains the frontend preview.
+Choose a host region, budget, and retention policy before provisioning. Point a
+pilot hostname at that host and allow inbound TCP 80 and 443. Keep operator SSH
+restricted to authorized administrators.
+
+The production overlay keeps the API and frontend host ports on loopback,
+serves the app through Caddy on HTTPS, and forces Secure cookies and the exact
+HTTPS origin. The API filesystem is read-only except for private data, session
+volumes, and a bounded temporary filesystem. The overlay drops API Linux
+capabilities and prevents privilege escalation. Health, readiness, and
+interactive API schema endpoints are accessible from the host for operators.
+
+On the host, put the selected provider credential and
+`INSURECLEAR_DOMAIN=pilot.your-domain.example` in the private `.env` file.
+Replace the example hostname with your actual DNS name. Validate and build:
+
+```bash
+chmod 600 .env
+docker compose -f docker-compose.yml -f docker-compose.pilot.yml config --quiet
+docker compose -f docker-compose.yml -f docker-compose.pilot.yml build
+docker compose -f docker-compose.yml -f docker-compose.pilot.yml run --rm --no-deps api python -m tools.manage_users --db /app/data/auth.sqlite3 create --username operator --org-id pilot-org --role admin
+docker compose -f docker-compose.yml -f docker-compose.pilot.yml up -d
+```
+
+The account CLI prompts privately. Provision each claimant and qualified
+reviewer separately. Keep the same Compose project name on upgrades so the
+private data and session volumes remain attached. Keep this host to one API
+instance until the shared-worker migration is completed.
+
+Check `http://127.0.0.1:8000/ready` from the host, then verify the actual HTTPS
+sign-in, failed login, unauthorized and cross-organization requests, review
+version conflicts, approved export, and logout. Confirm HTTP redirects to HTTPS.
+Inspect the cookie flags in the browser. Caddy obtains certificates for the
+configured hostname after DNS and ACME validation succeed. See
+[Caddy automatic HTTPS](https://caddyserver.com/docs/automatic-https).
+
+Back up both private Compose volumes as one consistent unit after stopping
+case intake and the API. Store encrypted backups with restricted access and
+the agreed retention period. Restore into a separate private environment and
+test account/session, case/review version, and approved-export continuity
+before accepting a pilot. Host disk encryption, backup access, firewall rules,
+external rate limits, alerts, and a successful restore drill require operator
+verification. This setup has been prepared locally; an actual host is pending.
 ## Manual deployment
 
 API:
@@ -39,10 +111,9 @@ npm test
 npm run build
 ```
 
-Serve `web/frontend/dist` with the same-origin `/api` proxy. No access credential
-belongs in Vite variables or the shipped bundle. A deliberately separate API origin
-requires a configured base URL, exact credentialed CORS and matching cookie/CSRF
-behavior; verify those settings before use. Provider keys remain server-side.
+Serve `web/frontend/dist` and proxy `/api` on the same HTTPS origin. Configure
+`INSURECLEAR_CORS_ORIGINS` with that exact browser origin and keep Secure
+cookies enabled. Account credentials and provider keys stay server-side.
 
 ## Persistence and recovery
 

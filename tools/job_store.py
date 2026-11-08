@@ -14,6 +14,7 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "jobs.sqlite3"
+ACCOUNT_CASE_PREFIX = "job_"
 
 
 class QueueFull(ValueError):
@@ -138,7 +139,8 @@ class JobStore:
     def list_for(self, principal: dict) -> list[dict]:
         columns = "id,status,progress,stage,message,case_id,case_label,mode,created_at,updated_at,owner_id,org_id"
         if principal.get("legacy"):
-            where, values = "1=1", ()
+            where = "owner_id IS NULL AND lower(substr(case_id, 1, ?)) != ?"
+            values = (len(ACCOUNT_CASE_PREFIX), ACCOUNT_CASE_PREFIX)
         elif principal.get("role") in {"reviewer", "admin"}:
             where, values = "org_id = ? AND owner_id IS NOT NULL", (principal["org_id"],)
         else:
@@ -169,6 +171,18 @@ class JobStore:
         values.append(job_id)
         with self._lock, self._connect() as connection:
             connection.execute(f"UPDATE jobs SET {', '.join(assignments)} WHERE id = ?", values)
+
+    def stop(self, job_id: str, status: str, message: str, error_type: str) -> bool:
+        if status not in {"failed", "cancelled", "timed_out"}:
+            raise ValueError("Unknown terminal stop status")
+        with self._lock, self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if not row or row[0] not in {"running", "cancellation_requested"}:
+                return False
+            status = "cancelled" if row[0] == "cancellation_requested" else status
+            db.execute("UPDATE jobs SET status=?,stage=?,message=?,error=?,traceback=NULL,updated_at=? WHERE id=?", (status, status, message, error_type, self._now(), job_id))
+            return True
 
     def complete(self, job_id: str, result: dict) -> bool:
         """Completion and cancellation contend for the same durable write lock."""

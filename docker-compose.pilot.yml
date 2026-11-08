@@ -1,0 +1,49 @@
+# Layer over docker-compose.yml on a dedicated Linux pilot host.
+# Resolve INSURECLEAR_DOMAIN to that host before starting the HTTPS service.
+services:
+  api:
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=512m
+    environment:
+      INSURECLEAR_AUTH_MODE: accounts
+      INSURECLEAR_AUTH_COOKIE_SECURE: "true"
+      INSURECLEAR_CORS_ORIGINS: https://${INSURECLEAR_DOMAIN:?Set INSURECLEAR_DOMAIN to the pilot hostname}
+    stop_grace_period: 30s
+
+  frontend:
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /var/cache/nginx:rw,nosuid,size=32m
+      - /run:rw,nosuid,size=8m
+      - /tmp:rw,noexec,nosuid,size=8m
+
+  https:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - frontend
+    environment:
+      INSURECLEAR_DOMAIN: ${INSURECLEAR_DOMAIN:?Set INSURECLEAR_DOMAIN to the pilot hostname}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - insureclear-tls-data:/data
+      - insureclear-tls-config:/config
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  insureclear-tls-data:
+  insureclear-tls-config:

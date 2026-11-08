@@ -49,7 +49,7 @@ _DATE = re.compile(
 )
 _NUMBER = r"(?:\d{1,3}(?:,\s*\d{2,3})+|\d+)(?:\.\d+)?"
 _AMOUNT = re.compile(
-    rf"(?:(?:₹|INR|Rs\.?)\s*{_NUMBER}(?:\s*(?:lakhs?|crores?))?|"
+    rf"(?<![A-Za-z0-9])(?:(?:₹|INR|Rs\.?)\s*{_NUMBER}(?:\s*(?:lakhs?|crores?))?|"
     rf"{_NUMBER}\s*(?:rupees|INR|lakhs?|crores?))",
     re.I,
 )
@@ -68,7 +68,7 @@ _BARE_ID = re.compile(
     r"\b(?=[A-Z0-9/-]*\d)[A-Z]{2,}(?:/[A-Z0-9]+|-[A-Z0-9]+){1,}(?:/\d{2,})?/?(?![A-Za-z0-9])"
 )
 _CASE_LAW = re.compile(
-    r"\b[A-Z][A-Za-z.&' -]{2,}\s+v(?:s?\.?|ersus)\s+[A-Z][A-Za-z.&' -]{2,}"
+    r"(?<!/)\b[A-Z][A-Za-z&' -]{2,}\.?\s+v(?:s?\.?|ersus)\s+[A-Z][A-Za-z&' -]{2,}"
     r"|(?:AIR\s+\d{4}|SCC\s+\d{4}|\(\d{4}\))",
     re.I,
 )
@@ -195,8 +195,11 @@ def sanitize_unsupported_references(
     }
     for issue in validation.issues:
         if issue.category in {"unsupported_clause", "unsupported_deadline", "invented_case_law"} and issue.value:
-            parts = re.split(r"(?<=[.!?])\s+|\n+", sanitized)
-            sanitized = "\n".join("[Unsupported statement removed; review the source wording.]" if issue.value in part else part for part in parts)
+            # Preserve the matched span across sentence and line boundaries.
+            terminal = issue.value[-1] if issue.value[-1] in ".!?" else ""
+            marked = sanitized.replace(issue.value, "\0" + terminal)
+            parts = re.split(r"(?<=[.!?])\s+|\n+", marked)
+            sanitized = "\n".join("[Unsupported statement removed; review the source wording.]" if "\0" in part else part for part in parts)
             continue
         replacement = replacements.get(issue.category)
         if replacement and issue.value:

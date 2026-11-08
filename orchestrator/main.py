@@ -92,6 +92,7 @@ def run_pipeline(
 
     @contextmanager
     def stage_timer(label):
+        check_control()
         timer = _timed(label)
         try:
             with timer:
@@ -133,7 +134,7 @@ def run_pipeline(
     _validate_text(denial_text, "denial letter")
     _validate_text(policy_text, "policy document")
     registry = load_registry()
-    prepare_session(case_id, denial_text, policy_text, regulatory_text, retrieval_fingerprint() + registry.fingerprint + ":policy-evidence-1:quality-2")
+    prepare_session(case_id, denial_text, policy_text, regulatory_text, retrieval_fingerprint() + registry.fingerprint + ":policy-evidence-1:quality-2:letter-markers-1")
 
     # ── Agent 1: Auditor ──────────────────────────────────────────
     print("\n[Step 1/5] Auditor — Parsing documents...")
@@ -148,7 +149,7 @@ def run_pipeline(
     print("\n[Step 2/5] Policy Analyst — Examining policy terms...")
     emit("policy_analyst", "Policy Analyst is checking clauses and exclusions", 30, "running")
     with stage_timer("Policy Analyst") as t2:
-        policy_result = policy_analyst.run(policy_text, auditor_result, case_id)
+        policy_result = policy_analyst.run(policy_text, auditor_result, case_id, denial_text)
         policy_result = validate_agent_output("Policy Analyst", policy_result)
         policy_result = annotate_policy_evidence(policy_result, policy_text)
 

@@ -47,6 +47,8 @@ MIN_SECONDS_BETWEEN_CALLS = 13  # Gemini free tier allows 5 requests per minute
 
 MANIFEST_SCHEMA_VERSION = 1
 GENERATION_SOURCE_PATHS = (
+    "requirements.lock",
+    "requirements-security.txt",
     "orchestrator/main.py",
     "tools/agent_validation.py",
     "tools/document_context.py",
@@ -59,7 +61,7 @@ GENERATION_SOURCE_PATHS = (
     "tools/pdf_reader.py",
     "tools/runtime_control.py",
 )
-USAGE_COUNTERS = ("total_calls", "total_tokens", "total_retries", "total_429s")
+USAGE_COUNTERS = ("total_calls", "total_tokens", "total_retries", "total_429s", "unreported_usage_calls")
 
 
 def _canonical_json(value) -> str:
@@ -89,6 +91,7 @@ def build_evaluation_manifest(case: dict, denial: str, policy: str) -> dict:
         "case_timeout_seconds": runtime.seconds,
         "case_max_calls": runtime.max_calls,
         "case_max_tokens": runtime.max_tokens,
+        "python_version": list(sys.version_info[:3]),
         "max_revisions": pipeline_module.MAX_REVISIONS,
         "min_approve_score": pipeline_module.MIN_APPROVE_SCORE,
     }

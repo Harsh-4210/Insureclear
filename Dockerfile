@@ -8,8 +8,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt requirements-security.txt requirements.lock ./
+RUN python -m pip install --no-cache-dir --upgrade "pip>=26.2,<27" \
+    && python -m pip install --no-cache-dir --require-hashes -r requirements.lock
 
 COPY . .
 RUN mkdir -p data/output data/job_inputs

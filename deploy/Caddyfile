@@ -1,0 +1,25 @@
+{
+    admin off
+}
+
+{$INSURECLEAR_DOMAIN} {
+    request_body {
+        max_size 50MB
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        Referrer-Policy "no-referrer"
+        X-Content-Type-Options "nosniff"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        -Server
+    }
+
+    @operator path /health /ready /docs /docs/* /redoc /openapi.json
+    respond @operator 404
+
+    reverse_proxy frontend:80 {
+        # Keep framework-generated redirects on HTTPS behind the nginx hop.
+        header_down Location "^http://" "https://"
+    }
+}

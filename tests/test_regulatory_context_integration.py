@@ -108,3 +108,41 @@ def test_writer_judge_and_revision_share_verified_policy_wording(monkeypatch, tm
     judge.run("Final letter", {}, evidence, "policy_judge")
     assert len(prompts) == 3 and all(quote in prompt for prompt in prompts)
     assert all("already supplied" in prompt for prompt in prompts)
+
+
+import pytest
+
+@pytest.mark.parametrize("revision", [False, True])
+def test_writer_removes_only_known_internal_policy_markers(monkeypatch, tmp_path, revision):
+    monkeypatch.setattr(io_utils, "SESSIONS_DIR", tmp_path / "sessions")
+    context = "[policy:12:72]\nSection 1.2 covers day-care treatment without a 24-hour stay."
+    regulatory = evidence_result(); regulatory["verified_policy_context"] = context
+    monkeypatch.setattr(appeal_writer, "call_llm", lambda *args, **kwargs: "Section 1.2 covers treatment. [policy:12:72] Unknown [policy:99:100].")
+    if revision:
+        letter = appeal_writer.revise("Initial letter", {}, {}, regulatory, "strip_revision")
+    else:
+        letter = appeal_writer.run({}, {"verified_policy_context": context}, regulatory, "strip_initial")
+    assert "[policy:12:72]" not in letter
+    assert "[policy:99:100]" in letter
+    assert "Section 1.2" in letter
+
+@pytest.mark.parametrize("stage", ["judge", "irdai_checker"])
+def test_cached_review_requires_current_system_instructions(monkeypatch, tmp_path, stage):
+    monkeypatch.setattr(io_utils, "SESSIONS_DIR", tmp_path / "sessions")
+    module = judge if stage == "judge" else irdai_checker
+    calls = []
+
+    def generate(_prompt, **kwargs):
+        calls.append(kwargs["system_prompt"])
+        if stage == "judge":
+            return {"overall_score": .9, "recommendation": "APPROVE"}
+        return {"appeal_pathway": {"reasoning": "Synthetic result"}}
+
+    monkeypatch.setattr(module, "call_llm_json", generate)
+    args = ("Review the supplied evidence.", {}, {}, "review_cache") if stage == "judge" else ({}, {}, "review_cache")
+    module.run(*args)
+    module.run(*args)
+    assert len(calls) == 1
+    monkeypatch.setattr(module, "SYSTEM_PROMPT", module.SYSTEM_PROMPT + "\nUpdated review instruction.")
+    module.run(*args)
+    assert len(calls) == 2

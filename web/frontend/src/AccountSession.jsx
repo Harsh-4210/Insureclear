@@ -1,44 +1,46 @@
 import React, { useEffect, useState } from 'react'
 import { createClient } from './client'
+import EntryScreen from './EntryScreen'
 
 export default function AccountSession({ children }) {
   const [user, setUser] = useState(null)
   const [busy, setBusy] = useState(true)
-  const [notice, setNotice] = useState('')
+  const [notice, setNotice] = useState(null)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [sessionAttempt, setSessionAttempt] = useState(0)
-  const [api] = useState(() => createClient({ base: import.meta.env.VITE_API_BASE_URL || '', onExpired: () => { setUser(null); setPassword(''); setNotice('Your session expired. Sign in again to continue.') } }))
+  const [returnToSignIn, setReturnToSignIn] = useState(false)
+  const [api] = useState(() => createClient({ onExpired: () => { setReturnToSignIn(true); setUser(null); setPassword(''); setNotice({ text: 'Your session expired. Sign in again to continue.', error: true }) } }))
   useEffect(() => {
     let active = true
     setBusy(true)
-    api.session().then(value => { if (active) { setUser(value); setNotice('') } }).catch(e => { if (active) setNotice(e.status === 401 ? '' : e.message) }).finally(() => { if (active) setBusy(false) })
+    api.session().then(value => { if (active) { setUser(value); setNotice(null) } }).catch(e => { if (active) setNotice(e.status === 401 ? null : { text: e.message, error: true }) }).finally(() => { if (active) setBusy(false) })
     return () => { active = false }
   }, [api, sessionAttempt])
   const login = async event => {
     event.preventDefault()
-    setBusy(true); setNotice('')
+    setBusy(true); setNotice(null)
     try { setUser(await api.login(username, password)); setUsername('') }
-    catch (e) { setNotice(e.message || 'Unable to sign in. Check your connection.') }
+    catch (e) { setNotice({ text: e.message || 'Unable to sign in. Check your connection.', error: true }) }
     finally { setPassword(''); setBusy(false) }
   }
   const logout = async () => {
-    setUser(null); setPassword(''); setUsername(''); setBusy(true); setNotice('Signing out…')
-    try { await api.logout(); setNotice('Signed out. Private case data cleared.') }
-    catch (e) { setNotice(`Private case data cleared. Server sign-out could not be confirmed: ${e.message}. Retry session to sign out again.`) }
+    setReturnToSignIn(true)
+    setUser(null); setPassword(''); setUsername(''); setBusy(true); setNotice({ text: 'Signing out…' })
+    try { await api.logout(); setNotice({ text: 'Signed out. Private case data cleared.' }) }
+    catch (e) { setNotice({ text: `Private case data cleared. Server sign-out could not be confirmed: ${e.message}. Retry session to sign out again.`, error: true }) }
     finally { setBusy(false) }
   }
   if (user) return children({ api, user, logout })
-  return <div className="app-shell"><main className="page-wrap login-wrap"><section className="card input-panel" aria-busy={busy}>
-    <div className="eyebrow">InsureClear · Private pilot</div><h1>Sign in to your cases</h1><p>Use the account provided by your pilot operator.</p>
-    <form onSubmit={login} className="login-form">
+  return <EntryScreen focusSignIn={returnToSignIn}>
+    <form onSubmit={login} className="login-form" aria-busy={busy}>
       <label>Username<input name="username" autoComplete="username" required maxLength={128} value={username} onChange={e => setUsername(e.target.value)} disabled={busy} /></label>
       <label>Password<input name="password" type="password" autoComplete="current-password" required maxLength={128} value={password} onChange={e => setPassword(e.target.value)} disabled={busy} /></label>
       <button className="primary-btn" disabled={busy}>{busy ? 'Connecting…' : 'Sign in'}</button>
     </form>
-    {notice && <p className="inline-error" role="alert">{notice}</p>}
+    {notice && <p className={notice.error ? 'inline-error' : undefined} role={notice.error ? 'alert' : 'status'}>{notice.text}</p>}
     <button className="ghost-btn" disabled={busy} onClick={() => setSessionAttempt(n => n + 1)}>Retry session</button>
-  </section></main></div>
+  </EntryScreen>
 }
 
 export function CaseList({ api, refreshKey, onSelect, disabled }) {

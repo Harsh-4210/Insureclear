@@ -14,8 +14,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.routing import APIRoute
+from starlette.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, PlainTextResponse, JSONResponse
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -32,7 +35,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from orchestrator.main import run_pipeline  # noqa: E402
 from tools.io_utils import clear_session  # noqa: E402
-from tools.job_store import JobStore, QueueFull  # noqa: E402
+from tools.job_store import ACCOUNT_CASE_PREFIX, JobStore, QueueFull  # noqa: E402
 from web import auth  # noqa: E402
 from tools import io_utils, llm_client
 from tools.regulatory_registry import load_registry
@@ -57,7 +60,7 @@ job_store = JobStore(os.getenv("INSURECLEAR_JOB_DB", str(PROJECT_ROOT / "data" /
 
 def validated_origins() -> list[str]:
     from urllib.parse import urlsplit
-    origins = [value.strip() for value in os.getenv("INSURECLEAR_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if value.strip()]
+    origins = auth.browser_origins()
     for origin in origins:
         parsed = urlsplit(origin)
         if "*" in origin or parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment:
@@ -77,6 +80,15 @@ app.add_middleware(
     allow_headers=["Content-Type", "X-API-Key", "X-CSRF-Token"],
 )
 
+@app.exception_handler(RequestValidationError)
+async def safe_validation_error(_request: Request, error: RequestValidationError):
+    detail = [
+        {"loc": issue["loc"][:2], "msg": issue["msg"], "type": issue["type"]}
+        for issue in error.errors()
+    ]
+    return JSONResponse({"detail": detail}, status_code=422)
+
+
 @app.middleware("http")
 async def private_response_headers(request: Request, call_next):
     request_id = uuid.uuid4().hex
@@ -86,6 +98,7 @@ async def private_response_headers(request: Request, call_next):
         print({"event": "request_failed", "request_id": request_id, "error_type": type(error).__name__})
         response = JSONResponse({"detail": "Request failed; contact the operator with the request ID", "request_id": request_id}, status_code=500)
     response.headers["X-Request-ID"] = request_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
         vary = {value.strip() for value in response.headers.get("Vary", "").split(",") if value.strip()}
@@ -120,18 +133,17 @@ def _load_sample_text(filename: str) -> str:
 
 
 def _authenticate(request: Request, x_api_key: str | None = Header(default=None)) -> dict:
-    mode = os.getenv("INSURECLEAR_AUTH_MODE", "legacy").lower()
+    mode = auth.auth_mode()
     if mode == "accounts":
         return auth.current_principal(request)
     if mode != "legacy":
         raise HTTPException(503, "Authentication mode is not configured")
     configured_key = os.getenv("INSURECLEAR_API_KEY")
-    auth_required = os.getenv("INSURECLEAR_REQUIRE_AUTH", "false").lower() == "true"
-    if auth_required and not configured_key:
+    if not configured_key or configured_key == "replace_me_with_a_long_random_value":
         raise HTTPException(503, "API authentication is not configured")
-    if configured_key and not x_api_key:
+    if not x_api_key:
         raise HTTPException(401, "X-API-Key header is required")
-    if configured_key and not hmac.compare_digest(x_api_key or "", configured_key):
+    if not hmac.compare_digest(x_api_key.encode(), configured_key.encode()):
         raise HTTPException(403, "Invalid API key")
     return {"user_id": "legacy", "org_id": "legacy", "role": "admin", "legacy": True}
 
@@ -158,7 +170,10 @@ def get_authorized_job(job_id: str, principal: dict) -> dict:
     job = _job_snapshot(job_id)
     if not job or job.get("status") == "deleting":
         raise HTTPException(404, "Job not found")
-    if not principal.get("legacy"):
+    if principal.get("legacy"):
+        if job.get("owner_id") is not None or job["case_id"].lower().startswith(ACCOUNT_CASE_PREFIX):
+            raise HTTPException(404, "Job not found")
+    else:
         same_org = job.get("org_id") == principal["org_id"] and job.get("owner_id") is not None
         allowed = same_org and (job.get("owner_id") == principal["user_id"] or principal["role"] in {"reviewer", "admin"})
         if not allowed:
@@ -226,6 +241,10 @@ def _run_job(job_id: str, payload: dict[str, Any]) -> None:
     input_dir = payload.get("input_dir")
     case_id = payload["case_id"]
     try:
+        if case_id.lower().startswith(ACCOUNT_CASE_PREFIX):
+            job = job_store.get(job_id)
+            if not job or job.get("owner_id") is None or case_id != ACCOUNT_CASE_PREFIX + job_id:
+                raise ValueError("Invalid account checkpoint namespace")
         runtime = RuntimeControl(cancelled=lambda: (job_store.get(job_id) or {}).get("status") in {"cancelled", "cancellation_requested", "deleting"}, stats=llm_client.get_stats)
         runtime.check()
         if payload.get("fresh_run"):
@@ -243,19 +262,17 @@ def _run_job(job_id: str, payload: dict[str, Any]) -> None:
         if not job_store.complete(job_id, run_result):
             raise PipelineCancelled("Completion was superseded by cancellation")
     except Exception as exc:
-        snapshot = _job_snapshot(job_id) or {}
-        _update_job(
-            job_id,
-            status="cancelled" if isinstance(exc, PipelineCancelled) else "timed_out" if isinstance(exc, PipelineTimedOut) else "failed",
-            progress=snapshot.get("progress", 0),
-            stage="cancelled" if isinstance(exc, PipelineCancelled) else "failed",
-            message="Pipeline stopped" if isinstance(exc, (PipelineCancelled, PipelineTimedOut)) else "Pipeline failed",
-            error=type(exc).__name__,
-            traceback=None,
-        )
+        job_store.stop(job_id, "cancelled" if isinstance(exc, PipelineCancelled) else "timed_out" if isinstance(exc, PipelineTimedOut) else "failed", "Pipeline stopped" if isinstance(exc, (PipelineCancelled, PipelineTimedOut)) else "Pipeline failed", type(exc).__name__)
     finally:
         if input_dir:
-            shutil.rmtree(input_dir, ignore_errors=True)
+            safe_input = confined_path(JOB_INPUTS_DIR, input_dir)
+            if safe_input.name != job_id:
+                raise ValueError("Unsafe worker cleanup path")
+            if safe_input.exists():
+                try:
+                    shutil.rmtree(safe_input)
+                except FileNotFoundError:
+                    pass  # A concurrent authorized cleanup already removed it.
 
 
 def _worker_loop() -> None:
@@ -289,8 +306,50 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/api/analyze")
+class AnalysisRoute(APIRoute):
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+
+        async def bounded_analysis(request: Request):
+            # FastAPI otherwise parses multipart data before resolving dependencies.
+            request.state.analysis_principal = await run_in_threadpool(
+                _guard, request, request.headers.get("x-api-key")
+            )
+            # Two PDFs or two text fields. Allow URL encoding of UTF-8 text.
+            limit = max(2 * MAX_UPLOAD_BYTES, 24 * MAX_TEXT_CHARS) + 64 * 1024
+            length = request.headers.get("content-length")
+            if length is not None:
+                try:
+                    declared = int(length)
+                except ValueError:
+                    raise HTTPException(400, "Invalid content length") from None
+                if declared < 0:
+                    raise HTTPException(400, "Invalid content length")
+                if declared > limit:
+                    raise HTTPException(413, "Analysis body exceeds the limit")
+
+            received = 0
+
+            async def bounded_receive():
+                nonlocal received
+                message = await request.receive()
+                if message["type"] == "http.request":
+                    received += len(message.get("body", b""))
+                    if received > limit:
+                        raise HTTPException(413, "Analysis body exceeds the limit")
+                return message
+
+            return await handler(Request(request.scope, receive=bounded_receive))
+
+        return bounded_analysis
+
+
+analysis_router = APIRouter(route_class=AnalysisRoute)
+
+
+@analysis_router.post("/api/analyze")
 async def analyze(
+    request: Request,
     mode: str = Form(...),
     case_id: str = Form(""),
     fresh_run: bool = Form(False),
@@ -298,8 +357,8 @@ async def analyze(
     policy_text: str | None = Form(None),
     denial_pdf: UploadFile | None = File(None),
     policy_pdf: UploadFile | None = File(None),
-    principal: dict = Depends(_guard),
 ) -> dict[str, Any]:
+    principal = request.state.analysis_principal
     normalized_mode = mode.strip().lower()
     if normalized_mode not in {"demo", "text", "pdf"}:
         raise HTTPException(status_code=400, detail="mode must be one of: demo, text, pdf")
@@ -310,8 +369,11 @@ async def analyze(
 
     job_id = uuid.uuid4().hex
     case_label = resolved_case_id
-    if not principal.get("legacy"):
-        resolved_case_id = "job_" + job_id
+    if principal.get("legacy"):
+        if resolved_case_id.lower().startswith(ACCOUNT_CASE_PREFIX):
+            raise HTTPException(400, "case_id uses a reserved prefix")
+    else:
+        resolved_case_id = ACCOUNT_CASE_PREFIX + job_id
     payload: dict[str, Any] = {
         "case_id": resolved_case_id,
         "fresh_run": fresh_run,
@@ -324,8 +386,8 @@ async def analyze(
             payload["policy_text"] = _load_sample_text("sample_policy.txt")
             payload["denial_pdf"] = str(SAMPLES_DIR / "sample_denial.txt")
             payload["policy_pdf"] = str(SAMPLES_DIR / "sample_policy.txt")
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Demo mode is unavailable: {exc}") from exc
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=500, detail="Demo mode is unavailable") from exc
     elif normalized_mode == "text":
         payload["denial_text"] = _validate_text_input(denial_text, "denial_text")
         payload["policy_text"] = _validate_text_input(policy_text, "policy_text")
@@ -363,6 +425,9 @@ async def analyze(
         "status": "queued",
         "mode": normalized_mode,
     }
+
+
+app.include_router(analysis_router)
 
 
 @app.get("/api/jobs/{job_id}")
@@ -454,8 +519,11 @@ def ready():
         RuntimeControl()
         if min(int(os.getenv("INSURECLEAR_MAX_PENDING_JOBS", "100")), int(os.getenv("INSURECLEAR_MAX_PENDING_PER_USER", "3"))) < 1:
             raise ValueError("Queue configuration invalid")
-        if os.getenv("INSURECLEAR_AUTH_MODE", "legacy") == "accounts":
+        if auth.auth_mode() == "accounts":
+            auth.secure_cookie()
             with auth.get_store()._connect() as db: db.execute("SELECT 1").fetchone()
+        elif auth.auth_mode() != "legacy" or os.getenv("INSURECLEAR_API_KEY") in (None, "", "replace_me_with_a_long_random_value"):
+            raise ValueError("Authentication configuration invalid")
         checks["auth_configuration"] = True
     except Exception: checks["auth_configuration"] = False
     checks["provider_configured"] = bool(_provider_configured())

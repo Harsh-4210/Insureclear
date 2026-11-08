@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { startJobPolling } from './client'
 import AccountSession, { CaseList } from './AccountSession'
+import EntryScreen from './EntryScreen'
 import ReviewEditor from './ReviewEditor'
 
 const MODES = [
@@ -58,6 +59,12 @@ function Workspace({ api, user, logout }) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [pollError, setPollError] = useState('')
   const [retryPoll, setRetryPoll] = useState(0)
+  const heading = useRef(null)
+
+  useEffect(() => {
+    heading.current.focus({ preventScroll: true })
+    window.scrollTo({ top: 0, behavior: 'instant' })
+  }, [])
 
   const result = job?.result ?? null
   const status = job?.status ?? 'idle'
@@ -158,23 +165,16 @@ function Workspace({ api, user, logout }) {
 
   return (
     <div className="app-shell">
-      <div className="aurora aurora-left" />
-      <div className="aurora aurora-right" />
 
       <main className="page-wrap">
-        <div className="account-bar"><span>{user.username || user.user_id} · {user.role}</span><button className="secondary-btn" onClick={logout}>Sign out</button></div>
+        <header className="account-bar"><strong>insureclear</strong><div><span>{user.username || user.user_id} · {user.role}</span><button className="secondary-btn" onClick={logout}>Sign out</button></div></header>
         <section className="hero card">
           <div className="hero-copy">
-            <div className="eyebrow">InsureClear</div>
-            <h1>Premium claim appeal intelligence for Indian health insurance cases.</h1>
+            <div className="eyebrow">01 / Private workspace</div>
+            <h1 ref={heading} tabIndex={-1}>Claims workspace.</h1>
             <p>
               Upload denial documents, inspect policy evidence, and prepare an appeal draft for human review.
             </p>
-            <div className="hero-badges">
-              <span>IRDAI-cited</span>
-              <span>Revision loop</span>
-              <span>PDF + text + demo</span>
-            </div>
           </div>
 
           <div className="hero-stats">
@@ -565,5 +565,6 @@ function Workspace({ api, user, logout }) {
 }
 
 export default function App() {
+  if (import.meta.env.MODE === 'vercel-preview') return <EntryScreen preview />
   return <AccountSession>{({ api, user, logout }) => <Workspace key={user.user_id} api={api} user={user} logout={logout} />}</AccountSession>
 }
