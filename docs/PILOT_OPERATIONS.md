@@ -122,3 +122,14 @@ Both Groq and Gemini usage metadata feed case counters. If a successful response
 omits usable usage metadata, the next stage fails closed rather than treating
 unknown usage as free tokens. Provider-reported totals may still exclude failed
 requests; local limits are not a provider billing cap.
+
+
+## Provider support boundary
+
+This candidate's live verification uses Groq. The optional Gemini path still uses
+the deprecated google-generativeai SDK; its vendor reports that support ended in
+2025. Before selecting Gemini for a pilot, complete T14 in the implementation
+plan: migrate to google-genai, preserve budgets/usage/error behavior, and verify
+that provider with authorized synthetic data. A zero-advisory audit does not
+qualify an unsupported integration. Official vendor notice:
+https://github.com/google-gemini/deprecated-generative-ai-python.

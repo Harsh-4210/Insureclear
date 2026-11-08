@@ -179,9 +179,9 @@ Serve private-pilot claimant users and trained reviewers. A completed model job 
 ## Phase 6 — Local release candidate and performance
 
 ### T11: Independent review, build and capacity qualification (controller/reviewer)
-- [ ] Full offline suite/frontend tests/build; whitespace and staged private/secret-path inspection; dependency audit. Record important findings, not an unsupported claim of zero vulnerabilities.
+- [x] Offline Windows and Linux Python 3.11/3.13 suites, frontend tests and builds, path/whitespace inspection and advisory scans completed. Current counts and candidate-specific results are recorded in docs/PILOT_ACCEPTANCE.md.
 - [ ] Fresh independent review of identity/tenancy, review/source/version races, deletion and budget boundaries. Important findings require observed RED/GREEN regressions and full-suite pass; document unresolved impact.
-- [ ] Build API/frontend Docker images; smoke-test fresh and upgraded volume fixtures. If Docker is unavailable record exact missing dependency; unit simulation is not an image build.
+- [x] Built API/frontend images. Fresh, upgraded, reopened, and restored synthetic volumes passed. The persistent-host overlay passed read-only API persistence and HTTPS integration with a verified local test CA. Public-host certificate and storage checks remain external gates.
 - [ ] Profile stage timings/tokens, optimize measured repeated work; burst test under shared provider quotas. Targets: p95 queue-to-result <90s, <1% execution failures, no duplicate effects. Unmet targets stay open; agree pilot load before asserting capacity.
 - [ ] Commit verified progress; hash-link candidate code/results/checklist. Keep branch local; no push/merge/deploy implied.
 
@@ -205,6 +205,17 @@ Serve private-pilot claimant users and trained reviewers. A completed model job 
 - [ ] Add SSO/MFA/managed identity, org administration, billing/partner/batch APIs only when needed. Introduce semantic retrieval only after recall evaluation justifies it.
 - [ ] Load/failover/isolation/restore-test chosen capacity; approve revised cost/service objectives. Roadmap ranges are planning examples, not measured promises.
 
+## Provider maintenance gate — conditional Gemini activation
+
+### T14: Supported Gemini SDK before enabling Gemini in a pilot
+**Trigger:** operator selects Gemini. Current live candidate verification uses Groq only. Container startup exposed an actual legacy SDK end-of-support warning; the official repository confirms support ended in 2025. Zero known package advisories is not active vendor support.
+**Files:** `tools/llm_client.py`, direct requirements/security lock, provider transport/budget tests and pilot docs.
+**Interfaces:** preserve `call_llm`, `call_llm_json`, `get_stats` and existing env model selection. Use the supported `google-genai` Client/models.generate_content API, native JSON config/output reservation and actual usage metadata; load only the selected provider SDK. Do not silently change model IDs or legal/source behavior.
+- [ ] Read current official Google migration/client documentation; replace the deprecated dependency and regenerate the universal hash lock. Verify selected model availability/config before activation.
+- [ ] Observe RED then GREEN for text/native JSON, malformed JSON, rate/retry/timeout behavior, exact output reserves, prompt bounds, successful/unknown usage, and no raw secret/document logs. Keep Groq regressions green.
+- [ ] Run full offline suite/images/audits and provider-specific synthetic live verification after operator authorization for that destination/credential. Bind new SDK/lock/source hashes and preserve old results. Do not mark Gemini production-qualified from mocked tests or Groq runs.
+**Skills:** systematic-debugging, test-driven-development, requesting-code-review and verification-before-completion. Official source: https://github.com/google-gemini/deprecated-generative-ai-python and https://github.com/googleapis/python-genai.
+
 ## Status dashboard
 
 | Task | Status | Evidence / dependency |
@@ -215,13 +226,14 @@ Serve private-pilot claimant users and trained reviewers. A completed model job 
 | T04 | complete locally | case reads/downloads scoped by owner/org; full integrated suite recorded in ledger |
 | T05 | complete module | 30 review transaction tests |
 | T06 | complete locally | version/source-bound API; approval race regression fixed |
-| T07 | complete locally | 15 client tests/build; browser synthetic flow, real HTTPS acceptance pending |
+| T07 | complete locally | 16 client tests/build, synthetic browser flow and local HTTPS integration; external host acceptance pending |
 | T08 | complete locally | 245 passed/1 Windows symlink skip; PDF bounds added; deployment checks remain open |
 | T09 | audit code complete | 28 focused tests; 3 pinned sources/9 excerpts; legal sign-off unchecked |
 | T10 | offline code complete | manifest/CI tests green; two fresh live runs and representative expert review pending |
-| T11 | in progress | review findings fixed; Windows252 pass/1skip; audits0 known; Docker/live gates running |
+| T11 | qualification in progress | model/source fixes committed; offline tests, images, advisory checks and synthetic HTTPS/restore passed; final strict runs and host acceptance remain open |
 | T12 | external gate | operator/legal/environment decisions and deployment permission |
 | T13 | conditional | measured scale trigger and environment-specific design |
+| T14 | conditional provider gate | migrate legacy SDK before Gemini activation; current live verification is Groq |
 
 ## Verification and completion
 

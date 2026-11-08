@@ -47,6 +47,52 @@ caching disabled and verify login cookies, CSRF, organization isolation, PDF
 upload size, approved exports and rollback before enrolling users. See
 [Vercel rewrites](https://vercel.com/docs/routing/rewrites).
 
+## Persistent pilot host
+
+The connected pilot uses one Linux host running the API, worker, frontend, and
+HTTPS proxy. The separate Vercel deployment remains the frontend preview.
+Choose a host region, budget, and retention policy before provisioning. Point a
+pilot hostname at that host and allow inbound TCP 80 and 443. Keep operator SSH
+restricted to authorized administrators.
+
+The production overlay keeps the API and frontend host ports on loopback,
+serves the app through Caddy on HTTPS, and forces Secure cookies and the exact
+HTTPS origin. The API filesystem is read-only except for private data, session
+volumes, and a bounded temporary filesystem. The overlay drops API Linux
+capabilities and prevents privilege escalation. Health, readiness, and
+interactive API schema endpoints are accessible from the host for operators.
+
+On the host, put the selected provider credential and
+`INSURECLEAR_DOMAIN=pilot.your-domain.example` in the private `.env` file.
+Replace the example hostname with your actual DNS name. Validate and build:
+
+```bash
+chmod 600 .env
+docker compose -f docker-compose.yml -f docker-compose.pilot.yml config --quiet
+docker compose -f docker-compose.yml -f docker-compose.pilot.yml build
+docker compose -f docker-compose.yml -f docker-compose.pilot.yml run --rm --no-deps api python -m tools.manage_users --db /app/data/auth.sqlite3 create --username operator --org-id pilot-org --role admin
+docker compose -f docker-compose.yml -f docker-compose.pilot.yml up -d
+```
+
+The account CLI prompts privately. Provision each claimant and qualified
+reviewer separately. Keep the same Compose project name on upgrades so the
+private data and session volumes remain attached. Keep this host to one API
+instance until the shared-worker migration is completed.
+
+Check `http://127.0.0.1:8000/ready` from the host, then verify the actual HTTPS
+sign-in, failed login, unauthorized and cross-organization requests, review
+version conflicts, approved export, and logout. Confirm HTTP redirects to HTTPS.
+Inspect the cookie flags in the browser. Caddy obtains certificates for the
+configured hostname after DNS and ACME validation succeed. See
+[Caddy automatic HTTPS](https://caddyserver.com/docs/automatic-https).
+
+Back up both private Compose volumes as one consistent unit after stopping
+case intake and the API. Store encrypted backups with restricted access and
+the agreed retention period. Restore into a separate private environment and
+test account/session, case/review version, and approved-export continuity
+before accepting a pilot. Host disk encryption, backup access, firewall rules,
+external rate limits, alerts, and a successful restore drill require operator
+verification. This setup has been prepared locally; an actual host is pending.
 ## Manual deployment
 
 API:

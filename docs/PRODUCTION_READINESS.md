@@ -6,17 +6,19 @@ checkboxes and evidence sections whenever a milestone is completed.
 
 ## Current status
 
-**Last updated:** 2026-11-06
+**Last updated:** 2026-11-08
 
 **Current branch:** `codex/evidence-foundations` (local changes, not deployed)
 
-**Local HEAD:** `14ee15f`; final corrections remain in the working tree.
+**Local HEAD:** `f0a5c63`; deployment and acceptance documentation changes remain
+in the working tree.
 
 ### Completed baseline
 
-- 120 automated tests pass, including source integrity, provider budgets, cache identity,
-  Docker-volume compatibility simulation and active Streamlit flows (provider calls mocked).
-  See [current result and remaining work](EVIDENCE_FOUNDATIONS_RESULT.md).
+- 278 automated backend tests pass and one platform-dependent test is skipped,
+  including source integrity, provider budgets, cache identity, Docker-volume
+  compatibility simulation and active API/frontend flows (provider calls mocked).
+  Frontend checks also pass: 16 tests and a production build.
 - Strict targeted evaluation for `c01` and `c05` passes:
   - Verdict accuracy: 100%.
   - Letter-fact accuracy: 100%.
@@ -70,12 +72,12 @@ The pipeline is production-ready only when all of the following are true:
 | Verdicts | 100% verdict accuracy on current synthetic cohort (nine reused) | ☑ |
 | Evidence | Zero detected deterministic evidence errors on synthetic cohort; semantic review incomplete | ☐ |
 | Regulations | Correct source/version selected for every regulatory claim | ☐ |
-| Security | No secrets in source, logs, reports, or committed artifacts | ☐ |
+| Security | No secrets in source, logs, reports, or committed artifacts | ☑ review found no actionable vulnerabilities; host verification remains |
 | Reliability | No silent fallback or success-shaped failure | ☑ |
 | Performance | p95 case runtime below 90 seconds | ☐ |
 | Rate limits | Graceful cooldown, rotation, and retry behavior | ☑ |
 | Reproducibility | Same inputs produce equivalent conclusions and evidence | ☐ |
-| Operations | Health checks, request IDs, persisted failures, and usable metrics | ☐ |
+| Operations | Health checks, request IDs, persisted failures, and usable metrics | ☑ implemented; host monitoring/backup verification remains |
 
 ## Implementation plan and task list
 
@@ -91,7 +93,10 @@ The pipeline is production-ready only when all of the following are true:
   failed fresh run and record the final nine-reused/one-rerun cohort explicitly.
 - [x] Save the latest cohort summary and provenance as evaluation evidence.
 - [ ] Establish an independent fresh ten-case pass on the eventual release commit.
-- [ ] Add a documented CI command that runs the strict gates on every change.
+- [x] Add a documented offline CI workflow for the automated suite and frontend
+  checks on every change.
+- [ ] Run the live strict gates on the eventual release commit with authorized
+  provider credentials. Live evaluation is intentionally excluded from CI.
 
 Recommended command:
 
@@ -250,6 +255,9 @@ when possible.
 | 2026-11-06 | `14ee15f` + local corrections | Automated tests | Passed | 120 tests; scorer/fixture regressions RED to GREEN |
 | 2026-11-06 | working tree | Fresh ten-case live evaluation | Failed verdict gate | `sp_verified_20261106`: 9/10 verdicts; c08 fixture contradiction preserved |
 | 2026-11-06 | working tree | Final verified cohort, nine reused/one rerun | Passed configured gates; production limits open | `sp_release_20261106`: 10/10 verdicts; tracked facts 100%; 0 detected evidence violations; p95 147.48s; details in `EVIDENCE_FOUNDATIONS_RESULT.md` |
+| 2026-11-08 | `f0a5c63` + working tree | Backend/frontend regression and pilot Compose validation | Passed | 278 backend tests passed, 1 skipped; 16 frontend tests passed; frontend build passed; Compose overlay validated with a placeholder hostname |
+| 2026-11-08 | `f0a5c63` + working tree | Security review | Passed with no actionable findings | Reviewed auth/session isolation, uploads, error/log handling, proxy configuration and operator endpoints; actual host controls remain pending |
+| 2026-11-08 | working tree | Independent fresh live evaluation | Blocked | No Groq credential was configured in the execution shell; no provider call was attempted |
 
 ## Operational commands
 

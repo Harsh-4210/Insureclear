@@ -62,7 +62,7 @@ The CLI also supports paired PDF inputs, paired text files, and named checkpoint
 ## What you can inspect
 
 - **Case analysis.** Open a fictional demo, paste a denial and policy, or upload paired PDFs. Track progress through extraction, policy analysis, regulatory checking, drafting, and model review.
-- **Evidence.** Check exact policy excerpts, source offsets, regulatory versions, and any document coverage limits reported by the retrieval pipeline. See the [regulatory source inventory](docs/REGULATORY_SOURCES.md).
+- **Evidence.** Use the analysis views and full report to inspect exact policy excerpts, source offsets, regulatory versions, and document coverage limits. See the [regulatory source inventory](docs/REGULATORY_SOURCES.md).
 - **Human review.** Edit the draft, see evidence validation issues, and preserve the revision history. A reviewer records facts, coverage, and legal-applicability checks before approval. A later edit invalidates approval. The approved export serves the version and content that were reviewed.
 - **Operations.** Named accounts and organization boundaries restrict case access. The backend provides bounded queue admission, progress, cooperative cancellation, confined deletion, and readiness checks. [Pilot operations](docs/PILOT_OPERATIONS.md)
 
@@ -117,6 +117,6 @@ npm run build
 Pop-Location
 ```
 
-The archived Groq synthetic runs on earlier commit `423c019` scored **10/10** and **8/10** on verdict accuracy. Both recorded zero unsupported claims detected by the evaluator and zero execution failures. The 8/10 run failed the strict verdict gate. Ten fictional cases do not measure performance on real claims. The final candidate requires two fresh strict runs, qualified review, capacity testing, and deployment acceptance. [Evaluation methodology](docs/EVIDENCE_FOUNDATIONS_RESULT.md) · [Pilot acceptance record](docs/PILOT_ACCEPTANCE.md)
+The most recent full Groq qualification runs on commit `9cbb2e3` each scored **9/10** on verdict accuracy and completed all ten fictional cases. The first run flagged zero drafts with unsupported claims. The second flagged one. Both failed the strict gate. The [pilot acceptance record](docs/PILOT_ACCEPTANCE.md) tracks the follow-up fixes and release evidence. Pilot release requires two fresh passing runs on the final candidate, qualified review, and environment and capacity checks.
 
-The Vercel configuration builds a frontend-only preview from `web/frontend`. The connected pilot requires a durable FastAPI host, exact HTTPS origin configuration, and environment smoke tests. [Deployment guide](docs/DEPLOYMENT.md) · [Scaling roadmap](docs/SCALING_ROADMAP.md)
+The Vercel configuration builds a frontend-only preview from `web/frontend`. The connected pilot has a prepared persistent-host Compose overlay and HTTPS proxy. Provisioning, the actual hostname, and environment acceptance remain open. [Deployment guide](docs/DEPLOYMENT.md) · [Scaling roadmap](docs/SCALING_ROADMAP.md)
