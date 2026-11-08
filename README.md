@@ -117,6 +117,40 @@ npm run build
 Pop-Location
 ```
 
-The most recent full Groq qualification runs on commit `9cbb2e3` each scored **9/10** on verdict accuracy and completed all ten fictional cases. The first run flagged zero drafts with unsupported claims. The second flagged one. Both failed the strict gate. The [pilot acceptance record](docs/PILOT_ACCEPTANCE.md) tracks the follow-up fixes and release evidence. Pilot release requires two fresh passing runs on the final candidate, qualified review, and environment and capacity checks.
+The current offline verification passes **278 backend tests** with one
+platform-dependent test skipped, plus **16 frontend tests** and a successful
+frontend production build.
+
+### Historical live baseline
+
+The verified ten-case Groq baseline is recorded in
+[LIVE_REGRESSION_2026-11-05.md](docs/LIVE_REGRESSION_2026-11-05.md). It was
+collected on the pre-retrieval/registry working tree (`443d837`) and is retained
+as a historical comparison point, not as the final release qualification:
+
+| Measure | Baseline result |
+| --- | ---: |
+| Cases completed | 10/10 |
+| Extraction accuracy | 100% |
+| Verdict accuracy | 100% |
+| Letter-fact accuracy | 97.5% |
+| Detected unsupported-claim rate | 0% |
+| Failed cases | 0 |
+| Mean Judge score | 0.80 |
+| Mean runtime per case | 37.4 seconds |
+| Sample p95 | 59.94 seconds |
+| Provider calls | 88 |
+| Retries / 429s | 7 / 7 |
+
+The strict baseline gates passed for verdict accuracy and unsupported claims.
+Known gaps were one letter-fact miss, two missed key arguments, four Judge
+scores below 0.75, and the limited representativeness of ten short synthetic
+cases.
+
+The later evidence-foundation cohort reached 10/10 verdicts and zero detected
+evidence violations, but reused nine reports and had a 147.48-second sample
+p95. Pilot release still requires two fresh passing runs on the final
+candidate, qualified review, and environment, backup, and capacity checks. The
+[pilot acceptance record](docs/PILOT_ACCEPTANCE.md) tracks that evidence.
 
 The Vercel configuration builds a frontend-only preview from `web/frontend`. The connected pilot has a prepared persistent-host Compose overlay and HTTPS proxy. Provisioning, the actual hostname, and environment acceptance remain open. [Deployment guide](docs/DEPLOYMENT.md) · [Scaling roadmap](docs/SCALING_ROADMAP.md)
