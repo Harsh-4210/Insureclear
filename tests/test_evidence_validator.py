@@ -190,3 +190,19 @@ def test_sanitization_removes_case_law_split_across_lines():
     assert validate_appeal_letter(sanitized, evidence).valid
     assert "Smith" not in sanitized and "Insurer" not in sanitized
     assert "Please review the policy." in sanitized
+
+@pytest.mark.parametrize("letter", [
+    "Operations and Allied Matters of Insurers 2024.",
+    """Refrain from further undue reminders.
+
+5. Coverage for pneumonia.""",
+    "Protection of policyholders 2024.",
+])
+def test_currency_detection_does_not_start_inside_an_ordinary_word(letter):
+    result = validate_appeal_letter(letter, {"policy": "General inpatient coverage."})
+    assert not any(issue.category == "unsupported_amount" for issue in result.issues)
+
+
+def test_currency_detection_still_flags_an_actual_unsupported_amount():
+    result = validate_appeal_letter("Please refund Rs. 5,000.", {"policy": "General inpatient coverage."})
+    assert any(issue.category == "unsupported_amount" for issue in result.issues)

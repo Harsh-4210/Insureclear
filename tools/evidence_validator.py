@@ -49,7 +49,7 @@ _DATE = re.compile(
 )
 _NUMBER = r"(?:\d{1,3}(?:,\s*\d{2,3})+|\d+)(?:\.\d+)?"
 _AMOUNT = re.compile(
-    rf"(?:(?:₹|INR|Rs\.?)\s*{_NUMBER}(?:\s*(?:lakhs?|crores?))?|"
+    rf"(?<![A-Za-z0-9])(?:(?:₹|INR|Rs\.?)\s*{_NUMBER}(?:\s*(?:lakhs?|crores?))?|"
     rf"{_NUMBER}\s*(?:rupees|INR|lakhs?|crores?))",
     re.I,
 )
